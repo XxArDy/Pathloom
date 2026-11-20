@@ -129,6 +129,14 @@ impl Project {
         self.update_config(|c| c.require_approval = on)
     }
 
+    /// Sets (or, with an empty `read_ref`, removes) the `[git]` section; saves `.pathloom/project.toml`.
+    pub fn set_git_config(&mut self, read_ref: &str, fetch_interval_secs: u64) -> Result<()> {
+        let read_ref = read_ref.trim();
+        let git = (!read_ref.is_empty())
+            .then(|| crate::model::GitConfig { read_ref: Some(read_ref.to_string()), fetch_interval_secs: fetch_interval_secs.max(10) });
+        self.update_config(|c| c.git = git)
+    }
+
     fn update_config(&mut self, f: impl FnOnce(&mut ProjectConfig)) -> Result<()> {
         let mut config = self.config.clone();
         f(&mut config);

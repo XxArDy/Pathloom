@@ -38,6 +38,9 @@ export interface RecentProject {
   openedAt: number;
 }
 
+/** Git mode: the board is read from `readRef`; owner actions that cannot be written now wait in a queue. */
+export interface GitStatus { readRef: string | null; sha: string | null; error: string | null; queued: number }
+
 export const api = {
   projectCreate: (path: string, name: string) => invoke<ProjectSnapshot>('project_create', { path, name }),
   projectOpen: (path: string) => invoke<ProjectSnapshot>('project_open', { path }),
@@ -70,7 +73,9 @@ export const api = {
   taskRename: (taskId: string, title: string) => invoke<StageView[]>('task_rename', { taskId, title }),
   taskRemove: (taskId: string) => invoke<StageView[]>('task_remove', { taskId }),
   subtaskAdd: (taskId: string, title: string) => invoke<StageView[]>('subtask_add', { taskId, title }),
-  agentSetup: () => invoke<{ cliPath: string | null; agentChanges: 'auto' | 'review'; requireEvidence: boolean }>('agent_setup'),
+  agentSetup: () => invoke<{ cliPath: string | null; agentChanges: 'auto' | 'review'; requireEvidence: boolean; readRef: string; fetchIntervalSecs: number }>('agent_setup'),
+  setGitConfig: (readRef: string, interval: number) => invoke<void>('set_git_config', { readRef, interval }),
+  gitStatus: () => invoke<GitStatus>('git_status'),
   setRequireEvidence: (on: boolean) => invoke<void>('set_require_evidence', { on }),
   setAgentChanges: (review: boolean) => invoke<void>('set_agent_changes', { review }),
   activity: (limit: number, stage?: string) => invoke<LogEntry[]>('activity', { limit, stage: stage ?? null }),

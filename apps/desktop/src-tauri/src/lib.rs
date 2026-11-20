@@ -1,6 +1,7 @@
 //! Tauri shell: thin commands over `pathloom-core`. All file access goes through the core;
 //! the WebView has no filesystem permissions.
 
+mod gitmode;
 mod recent;
 mod watch;
 
@@ -41,15 +42,27 @@ fn with_project<T>(
     f(project).map_err(|e| e.to_string())
 }
 
+/// Stage views from the git ref when git mode is active (claims stay local), else from the working copy.
 fn views(p: &Project) -> pathloom_core::Result<Vec<StageView>> {
-    p.stage_views_live()
+    let src = gitmode::source(p);
+    if !src.from_git {
+        return p.stage_views_live();
+    }
+    let mut views = src.stage_views_live()?;
+    let local = p.stage_views_live().unwrap_or_default();
+    for v in &mut views {
+        if let Some(l) = local.iter().find(|l| l.stage.key == v.stage.key) {
+            v.claims = l.claims.clone();
+        }
+    }
+    Ok(views)
 }
 
 fn snapshot(p: &Project) -> pathloom_core::Result<ProjectSnapshot> {
     Ok(ProjectSnapshot {
         root: p.root.display().to_string(),
         name: p.config.name.clone(),
-        boards: p.list_boards()?,
+        boards: gitmode::source(p).list_boards()?,
         stages: views(p)?,
     })
 }
@@ -65,6 +78,7 @@ fn activate(app: &AppHandle, state: &State<'_, AppState>, project: Project) -> C
     // Live reload is best effort: the app still works without it.
     let watcher = watch::start(app.clone(), project.root.clone(), plan_dir, &SNAPSHOT).ok();
     *state.watcher.lock().map_err(|_| "internal state poisoned".to_string())? = watcher;
+    gitmode::restart(app, &project);
     *state.project.lock().map_err(|_| "internal state poisoned".to_string())? = Some(project);
     Ok(snap)
 }
@@ -137,7 +151,7 @@ fn board_arrange(state: State<'_, AppState>, name: String) -> CmdResult<Board> {
 
 #[tauri::command]
 fn board_load(state: State<'_, AppState>, name: String) -> CmdResult<Board> {
-    with_project(&state, |p| p.load_board(&name))
+    with_project(&state, |p| gitmode::source(p).load_board(&name))
 }
 
 #[tauri::command]
@@ -152,7 +166,7 @@ fn board_create(state: State<'_, AppState>, name: String, title: String) -> CmdR
 
 #[tauri::command]
 fn boards_list(state: State<'_, AppState>) -> CmdResult<Vec<String>> {
-    with_project(&state, |p| p.list_boards())
+    with_project(&state, |p| gitmode::source(p).list_boards())
 }
 
 #[tauri::command]
@@ -219,7 +233,7 @@ fn stage_update(state: State<'_, AppState>, key: String, meta: StageMeta) -> Cmd
 
 #[tauri::command]
 fn stage_source(state: State<'_, AppState>, key: String) -> CmdResult<String> {
-    with_project(&state, |p| p.stage_source(&key))
+    with_project(&state, |p| gitmode::source(p).stage_source(&key))
 }
 
 #[tauri::command]
@@ -589,6 +603,9 @@ struct AgentSetup {
     agent_changes: String,
     /// Agents must attach passing evidence to close tasks.
     require_evidence: bool,
+    /// `[git] read_ref` ("" = off) and its fetch interval.
+    read_ref: String,
+    fetch_interval_secs: u64,
 }
 
 #[tauri::command]
@@ -608,7 +625,14 @@ fn agent_setup(state: State<'_, AppState>) -> AgentSetup {
         .to_string();
     let require_evidence =
         state.project.lock().ok().and_then(|g| g.as_ref().map(|p| p.config.require_evidence)).unwrap_or(false);
-    AgentSetup { cli_path, agent_changes, require_evidence }
+    let git = state.project.lock().ok().and_then(|g| g.as_ref().and_then(|p| p.config.git.clone()));
+    AgentSetup {
+        cli_path,
+        agent_changes,
+        require_evidence,
+        read_ref: git.as_ref().and_then(|g| g.read_ref.clone()).unwrap_or_default(),
+        fetch_interval_secs: git.map_or(120, |g| g.fetch_interval_secs),
+    }
 }
 
 #[tauri::command]
@@ -628,14 +652,61 @@ fn set_require_evidence(state: State<'_, AppState>, on: bool) -> CmdResult<()> {
 }
 
 #[tauri::command]
+fn set_git_config(app: AppHandle, state: State<'_, AppState>, read_ref: String, interval: u64) -> CmdResult<()> {
+    let mut guard = state.project.lock().map_err(|_| "internal state poisoned".to_string())?;
+    let project = guard.as_mut().ok_or_else(|| "no project is open".to_string())?;
+    project.set_git_config(&read_ref, interval).map_err(|e| e.to_string())?;
+    gitmode::restart(&app, project);
+    gitmode::emit_all(&app, project);
+    gitmode::emit_status(&app, project);
+    Ok(())
+}
+
+#[tauri::command]
+fn git_status(state: State<'_, AppState>) -> CmdResult<gitmode::GitStatus> {
+    with_project(&state, |p| Ok(gitmode::status(p)))
+}
+
+/// Runs an owner action: in git mode commits it to the local checkout, or queues it while the tree is dirty.
+/// Returns `None` when it was queued, else the proposal the action decided (if it was one).
+fn owner_action(app: &AppHandle, p: &Project, action: &str, task_id: &str, args: serde_json::Value) -> pathloom_core::Result<Option<Option<Proposal>>> {
+    let item = gitmode::QueueItem { action: action.into(), task_id: task_id.into(), args, at: pathloom_core::now_rfc3339() };
+    let git = gitmode::read_ref(p);
+    let clean = git.is_some() && pathloom_core::gitsrc::is_clean(&p.root).unwrap_or(false);
+    if gitmode::route(git.is_some(), clean) == gitmode::Route::Direct {
+        if let Some(r) = &git {
+            let _ = pathloom_core::gitsrc::ff_to(&p.root, r);
+        }
+        match gitmode::perform(p, &item) {
+            Ok((files, prop)) => {
+                if git.is_some() {
+                    gitmode::commit_owner(&p.root, &item, &files);
+                }
+                return Ok(Some(prop));
+            }
+            // The task is not in the local copy yet (the board shows a newer ref): queue it.
+            Err(pathloom_core::Error::NotFound(_)) if git.is_some() => {}
+            Err(e) => return Err(e),
+        }
+    }
+    gitmode::append_queue(&p.root, item)?;
+    gitmode::emit_status(app, p);
+    Ok(None)
+}
+
+#[tauri::command]
 fn proposals_list(state: State<'_, AppState>) -> CmdResult<Vec<Proposal>> {
     with_project(&state, |p| p.list_proposals())
 }
 
 #[tauri::command]
-fn proposal_decide(state: State<'_, AppState>, id: String, approve: bool, comment: Option<String>) -> CmdResult<Proposal> {
+fn proposal_decide(app: AppHandle, state: State<'_, AppState>, id: String, approve: bool, comment: Option<String>) -> CmdResult<Proposal> {
     with_project(&state, |p| {
-        let d = p.decide_proposal(&id, approve, comment.as_deref(), "me")?;
+        let args = serde_json::json!({ "approve": approve, "comment": comment });
+        let Some(Some(d)) = owner_action(&app, p, "proposal", &id, args)? else {
+            // Queued: the proposal stays pending until the tree is clean.
+            return p.list_proposals()?.into_iter().find(|x| x.id == id).ok_or_else(|| pathloom_core::Error::NotFound(id.clone()));
+        };
         let st = d.decision.as_ref().map(|x| x.state.as_str()).unwrap_or("decided");
         let (stages, files) = if st == "approved" {
             (d.preview.created.iter().chain(&d.preview.updated).cloned().collect(), d.preview.files.clone())
@@ -649,9 +720,12 @@ fn proposal_decide(state: State<'_, AppState>, id: String, approve: bool, commen
 
 /// The owner approves or rejects a task in review (reasons are stored ids, e.g. `off-theme`).
 #[tauri::command]
-fn approvals_decide(state: State<'_, AppState>, task_id: String, approve: bool, reasons: Vec<String>, comment: Option<String>) -> CmdResult<Vec<StageView>> {
+fn approvals_decide(app: AppHandle, state: State<'_, AppState>, task_id: String, approve: bool, reasons: Vec<String>, comment: Option<String>) -> CmdResult<Vec<StageView>> {
     with_project(&state, |p| {
-        p.decide_approval(&task_id, approve, &reasons, comment.as_deref(), "me")?;
+        let action = if approve { "approve" } else { "reject" };
+        if owner_action(&app, p, action, &task_id, serde_json::json!({ "reasons": reasons, "comment": comment }))?.is_none() {
+            return views(p);
+        }
         let key = task_id.split('-').next().unwrap_or_default().to_string();
         let what = if approve { "approved" } else { "rejected" };
         log_app(p, "decide_approval", &format!("{what} {task_id}"), vec![key], vec![]);
@@ -661,9 +735,11 @@ fn approvals_decide(state: State<'_, AppState>, task_id: String, approve: bool, 
 
 /// The owner answers a decision with an option label or free text.
 #[tauri::command]
-fn decision_answer(state: State<'_, AppState>, task_id: String, choice: String) -> CmdResult<Vec<StageView>> {
+fn decision_answer(app: AppHandle, state: State<'_, AppState>, task_id: String, choice: String) -> CmdResult<Vec<StageView>> {
     with_project(&state, |p| {
-        p.answer_decision(&task_id, &choice, "me")?;
+        if owner_action(&app, p, "decide", &task_id, serde_json::json!({ "choice": choice }))?.is_none() {
+            return views(p);
+        }
         let key = task_id.split('-').next().unwrap_or_default().to_string();
         log_app(p, "answer_decision", &format!("answered {task_id}"), vec![key], vec![]);
         views(p)
@@ -672,7 +748,7 @@ fn decision_answer(state: State<'_, AppState>, task_id: String, choice: String) 
 
 #[tauri::command]
 fn inbox_list(state: State<'_, AppState>) -> CmdResult<Vec<pathloom_core::InboxItem>> {
-    with_project(&state, |p| p.inbox())
+    with_project(&state, |p| gitmode::source(p).inbox())
 }
 
 /// Re-run the command of a task's evidence (after the user confirmed it); returns the exit code, writes nothing.
@@ -733,6 +809,8 @@ pub fn run() {
             agent_setup,
             set_agent_changes,
             set_require_evidence,
+            set_git_config,
+            git_status,
             recent_forget,
             stage_rename_key,
             task_note_set,

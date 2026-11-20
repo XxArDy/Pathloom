@@ -184,3 +184,14 @@ fn require_approval_setting_roundtrips() {
     p.set_require_approval(false).unwrap();
     assert!(!std::fs::read_to_string(p.root.join(".pathloom/project.toml")).unwrap().contains("require_approval"));
 }
+
+#[test]
+fn set_git_config_roundtrip() {
+    let d = tempfile::tempdir().unwrap();
+    let mut p = Project::init(d.path(), "g").unwrap();
+    p.set_git_config(" origin/main ", 3).unwrap();
+    let g = Project::open(d.path()).unwrap().config.git.unwrap();
+    assert_eq!((g.read_ref.as_deref(), g.fetch_interval_secs), (Some("origin/main"), 10));
+    p.set_git_config("", 120).unwrap();
+    assert!(Project::open(d.path()).unwrap().config.git.is_none());
+}

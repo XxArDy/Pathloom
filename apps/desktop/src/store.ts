@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { AgentProfile, Board, Editor, StageView, Tool } from '@pathloom/canvas';
-import { api, errorText, type ProjectSnapshot } from './api';
+import { api, errorText, type GitStatus, type ProjectSnapshot } from './api';
 import type { Proposal } from './agentSync';
 import type { InboxItem } from './api';
 import type { LogEntry } from './agents';
@@ -22,6 +22,7 @@ interface AppStore {
   inspWidth: number;
   /** Usage meter turns yellow from this weekly-limit percent (persisted). */
   quotaWarn: number;
+  git: GitStatus | null;
   tool: Tool;
   zoom: number;
   save: SaveState;
@@ -109,6 +110,7 @@ export const useApp = create<AppStore>((set, get) => ({
   selectedStage: null,
   selectedTask: null,
   inspWidth: Number(localStorage.getItem('pathloom.inspWidth')) || 380,
+  git: null,
   quotaWarn: Number(localStorage.getItem('pathloom.quotaWarn')) || 70,
   tool: 'select',
   zoom: 1,

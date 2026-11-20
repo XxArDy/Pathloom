@@ -160,3 +160,17 @@ export function UsageMeter() {
   const tip = q.map(([a, v]) => `${agentText(a, agents)}: ${Math.round(v.percent_weekly)}%${v.resets_at ? ` · ${t('live.resets', { at: new Date(v.resets_at).toLocaleString() })}` : ''}`).join('\n');
   return <span className={`usage-meter ${max >= quotaWarn ? 'warn' : ''}`} title={tip}>{t('live.limit', { percent: Math.round(max) })}</span>;
 }
+
+/** Header: "origin/main @abc1234" when the board is read from a git ref, plus the owner-action queue size. */
+export function GitBadge() {
+  const { t } = useTranslation();
+  const git = useApp((s) => s.git);
+  if (!git?.readRef) return null;
+  const tip = [t('git.hint', { ref: git.readRef }), git.error ? t('git.error', { error: git.error }) : ''].filter(Boolean).join(String.fromCharCode(10));
+  return (
+    <>
+      <span className={`usage-meter ${git.error ? 'warn' : ''}`} title={tip}>{git.readRef}{git.sha ? ` @${git.sha.slice(0, 7)}` : ''}</span>
+      {git.queued > 0 && <span className="usage-meter warn" title={t('git.queuedHint')}>{t('git.queued', { count: git.queued })}</span>}
+    </>
+  );
+}

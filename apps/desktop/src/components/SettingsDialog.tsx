@@ -160,8 +160,8 @@ function CopyLine({ text }: { text: string }) {
 function Agents() {
   const { t } = useTranslation();
   const { project, set, quotaWarn } = useApp();
-  const [setup, setSetup] = useState<{ cliPath: string | null; agentChanges: 'auto' | 'review'; requireEvidence: boolean } | null>(null);
-  useEffect(() => { api.agentSetup().then(setSetup).catch(() => setSetup({ cliPath: null, agentChanges: 'auto', requireEvidence: false })); }, []);
+  const [setup, setSetup] = useState<{ cliPath: string | null; agentChanges: 'auto' | 'review'; requireEvidence: boolean; readRef: string; fetchIntervalSecs: number } | null>(null);
+  useEffect(() => { api.agentSetup().then(setSetup).catch(() => setSetup({ cliPath: null, agentChanges: 'auto', requireEvidence: false, readRef: '', fetchIntervalSecs: 120 })); }, []);
   if (!setup) return null;
   const cli = setup.cliPath ? (setup.cliPath.includes(' ') ? '"' + setup.cliPath + '"' : setup.cliPath) : 'pathloom';
   const json = JSON.stringify({ mcpServers: { pathloom: { command: setup.cliPath ?? 'pathloom', args: ['mcp'] } } }, null, 2);
@@ -180,6 +180,15 @@ function Agents() {
         {t('settings.requireEvidence')}
       </label>
       <p className="hint">{t('settings.requireEvidenceHint')}</p>
+      <label className="radio">
+        {t('settings.gitRef')}
+        <input type="text" placeholder="origin/main" defaultValue={setup.readRef} style={{ width: 140, margin: '0 8px' }}
+          onBlur={(e) => { const readRef = e.currentTarget.value.trim(); if (readRef !== setup.readRef) api.setGitConfig(readRef, setup.fetchIntervalSecs).then(() => setSetup({ ...setup, readRef })).catch((err) => set({ error: errorText(err) })); }} />
+        {t('settings.gitInterval')}
+        <input type="number" min={10} defaultValue={setup.fetchIntervalSecs} style={{ width: 72, marginLeft: 8 }}
+          onBlur={(e) => { const v = Math.max(10, Math.round(Number(e.currentTarget.value)) || 120); if (v !== setup.fetchIntervalSecs && setup.readRef) api.setGitConfig(setup.readRef, v).then(() => setSetup({ ...setup, fetchIntervalSecs: v })).catch((err) => set({ error: errorText(err) })); }} />
+      </label>
+      <p className="hint">{t('settings.gitHint')}</p>
       <label className="radio">
         {t('settings.quotaWarn')}
         <input type="number" min={1} max={100} value={quotaWarn} style={{ width: 64, marginLeft: 8 }}
