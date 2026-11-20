@@ -25,7 +25,7 @@ function useOwnerCall() {
 }
 
 /** Full-size image over the window; Esc or a click closes it. */
-function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
+export function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
   const { t } = useTranslation();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };

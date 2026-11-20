@@ -243,7 +243,9 @@
     "edgeBundle": "Group arrows between phases",
     "edgeBundleHint": "Arrows from one frame to another become one thick arrow with a count; hover a card to see its own arrows",
     "licenses": "Licenses",
-    "licensesOpen": "Pathloom: MIT or Apache-2.0 · third-party licenses…"
+    "licensesOpen": "Pathloom: MIT or Apache-2.0 · third-party licenses…",
+    "quotaWarn": "Warn when the weekly limit reaches, %",
+    "quotaWarnHint": "The limit indicator in the header turns yellow from this value."
   },
   "proposals": {
     "button": "Proposals ({{count}})",
@@ -321,7 +323,8 @@
     "confirm": "Open this link in its app?\n{{url}}"
   },
   "evidence": {
-    "verified": "Verified"
+    "verified": "Verified",
+    "verifiedOn": "Verified on {{sha}}"
   },
   "gate": {
     "check": "Check",
@@ -400,5 +403,22 @@
     "own": "Own answer…",
     "submit": "Answer",
     "askedBy": "Asked by {{who}}"
+  },
+  "live": {
+    "pipeline": "Delivery pipeline",
+    "step": {
+      "claimed": "claimed",
+      "pushed": "pushed",
+      "merged": "merged",
+      "verified": "verified",
+      "accepted": "accepted"
+    },
+    "stale": "stale",
+    "commits": "Commits",
+    "noCommits": "No commits mention this stage.",
+    "cost": "Cost by model",
+    "active": "Active agents",
+    "limit": "limit {{percent}}%",
+    "resets": "resets {{at}}"
   }
 }

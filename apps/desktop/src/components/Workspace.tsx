@@ -10,6 +10,7 @@ import { SettingsDialog } from './SettingsDialog';
 import { ProposalsDialog } from './ProposalsDialog';
 import { InboxDialog } from './InboxDialog';
 import { AgentBanner } from './AgentBanner';
+import { ActiveAgents, UsageMeter } from './LiveBits';
 import { OverviewView } from './OverviewView';
 import { CommandPalette } from './CommandPalette';
 import { startAgentSync } from '../agentSync';
@@ -91,6 +92,8 @@ export function Workspace() {
         <TabsBar />
         <div className="crumbs">
           {project?.name} <span className="sep">/</span> <b>{activeBoard ?? ''}</b>
+          <ActiveAgents />
+          <UsageMeter />
           <div className="views" role="tablist">
             <button role="tab" aria-selected={view === 'board'} className={`btn sm ${view === 'board' ? 'on' : ''}`} onClick={() => set({ view: 'board' })}><IconLayoutBoard size={14} />{t('views.board')}</button>
             <button role="tab" aria-selected={view === 'list'} className={`btn sm ${view === 'list' ? 'on' : ''}`} onClick={() => set({ view: 'list' })}><IconListDetails size={14} />{t('views.list')}</button>

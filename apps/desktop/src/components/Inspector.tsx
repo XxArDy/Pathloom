@@ -15,6 +15,7 @@ import { agentText, ago, claimOf, knownWhos, whoColor, whoText, type LogEntry } 
 import type { Evidence } from '@pathloom/canvas';
 import { findTheme } from '../theme';
 import { ApprovalBox, DecisionBox, taskKind } from './ApprovalCard';
+import { StageCommits, StageCost, TaskLive, evidenceStale, useHead } from './LiveBits';
 
 /** External session links open only after the user confirms (the URL may start another app). */
 async function openSession(url: string): Promise<void> {
@@ -23,12 +24,13 @@ async function openSession(url: string): Promise<void> {
 }
 
 /** Tooltip: "cargo test → 0 · 94 passed · 12 s · claude, 5 min ago". */
-function evidenceText(e: Evidence, t: (k: string, o?: Record<string, unknown>) => string, name: (id: string) => string = (x) => x): string {
+function evidenceText(e: Evidence, t: (k: string, o?: Record<string, unknown>) => string, name: (id: string) => string = (x) => x, head: string | null = null): string {
   const parts = [`${e.command} → ${e.exit_code}`];
   if (e.summary) parts.push(e.summary);
   if (e.duration_ms != null) parts.push(e.duration_ms < 1000 ? `${e.duration_ms} ms` : `${Math.round(e.duration_ms / 100) / 10} s`);
   if (e.by || e.at) parts.push([e.by ? name(e.by) : '', e.at ? ago(e.at, t as never) : ''].filter(Boolean).join(', '));
-  return `${t('evidence.verified')}: ${parts.join(' · ')}${e.log ? `\n${e.log}` : ''}`;
+  const label = evidenceStale(e.commit, head) ? t('evidence.verifiedOn', { sha: (e.commit ?? '').slice(0, 7) }) : t('evidence.verified');
+  return `${label}: ${parts.join(' · ')}${e.log ? `\n${e.log}` : ''}`;
 }
 
 /** Gate result and "Run check" (the app runs the stage's `check` command in the project folder). */
@@ -86,6 +88,7 @@ function TaskRow({ task, sub, stage }: { task: Task; sub?: boolean; stage: Stage
   const call = useStageCall();
   const { theme, customThemes, agents, set } = useApp();
   const claim = claimOf(stage, task.id);
+  const head = useHead();
   const claimColor = claim ? whoColor(`ai:${claim.agent}`, findTheme(theme, customThemes).tokens, agents) : null;
   const [adding, setAdding] = useState(false);
   const done = isDone(task);
@@ -101,14 +104,14 @@ function TaskRow({ task, sub, stage }: { task: Task; sub?: boolean; stage: Stage
         </button>
         {stage.taskInfo?.[task.id]?.approval?.state === 'pending' && !done && <span className="review-badge">{t('approval.review')}</span>}
         {done && ev && (
-          <span className="verified" title={evidenceText(ev, t, (x) => agentText(x, agents))} aria-label={t('evidence.verified')}><IconShieldCheck size={13} /></span>
+          <span className="verified" title={evidenceText(ev, t, (x) => agentText(x, agents), head)} aria-label={t('evidence.verified')}><IconShieldCheck size={13} /></span>
         )}
         {claim && (
-          <button className={`claim-chip ${claim.silent ? 'silent' : ''}`} style={claimColor && !claim.silent ? { color: claimColor, borderColor: claimColor } : undefined}
+          <button className={`claim-chip ${claim.stale ? 'stale' : claim.silent ? 'silent' : ''}`} style={claimColor && !claim.silent && !claim.stale ? { color: claimColor, borderColor: claimColor } : undefined}
             title={(claim.silent ? t('agentsUi.silentHint', { agent: agentText(claim.agent, agents), ago: ago(claim.heartbeatAt ?? '', t) }) + '\n' : '')
               + (claim.note ? claim.note + '\n' : '') + t('agentsUi.release', { agent: agentText(claim.agent, agents) })}
             onClick={() => call(api.claimRelease(claim.taskId))}>
-            {claim.silent && <IconAlertTriangle size={10} />}{agentText(claim.agent, agents)} <IconX size={10} />
+            {(claim.silent || claim.stale) && <IconAlertTriangle size={10} />}{agentText(claim.agent, agents)} <IconX size={10} />
           </button>
         )}
         <span className="row-actions">
@@ -301,6 +304,8 @@ export function Inspector({ stageKey }: { stageKey: string }) {
                 </ul>
               </>
             )}
+            <StageCost stageKey={stage.key} />
+            <StageCommits stageKey={stage.key} />
             {stage.kind !== 'milestone' && (
               <>
                 <div className="i-h"><span>{t('inspector.tasks')}</span><span>{stage.progress[0]} / {stage.progress[1]}</span></div>
@@ -402,6 +407,7 @@ function TaskDetail({ stage, taskId }: { stage: StageView; taskId: string }) {
   const { task, parent } = found;
   const done = isDone(task);
   const claim = claimOf(stage, task.id);
+  const head = useHead();
   const ev = stage.evidence?.[task.id];
   const info = stage.taskInfo?.[task.id] ?? {};
   const [history, setHistory] = useState<LogEntry[]>([]);
@@ -435,14 +441,16 @@ function TaskDetail({ stage, taskId }: { stage: StageView; taskId: string }) {
         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.blur(); } }}
       />
       {claim && (
-        <p className={`td-claim ${claim.silent ? 'silent' : ''}`}>
-          {claim.silent && <IconAlertTriangle size={13} />}
+        <p className={`td-claim ${claim.stale ? 'stale' : claim.silent ? 'silent' : ''}`}>
+          {(claim.silent || claim.stale) && <IconAlertTriangle size={13} />}
           {t('task.claimedBy', { agent: agentText(claim.agent, agents), ago: ago(claim.heartbeatAt ?? '', t) })}
           {claim.note && <span className="muted"> · {claim.note}</span>}
+          {claim.stale && <span className="badge-stale">{t('live.stale')}</span>}
           <button className="icon-btn" title={t('agentsUi.release', { agent: agentText(claim.agent, agents) })} onClick={() => call(api.claimRelease(claim.taskId))}><IconX size={12} /></button>
         </p>
       )}
-      {done && ev && <div className="gate ok"><IconShieldCheck size={14} /><span className="grow">{evidenceText(ev, t, (x) => agentText(x, agents))}</span></div>}
+      <TaskLive stage={stage} taskId={task.id} claim={claim} />
+      {done && ev && <div className="gate ok"><IconShieldCheck size={14} /><span className="grow">{evidenceText(ev, t, (x) => agentText(x, agents), head)}</span></div>}
 
       {(taskKind(stage, task.id) === 'decision' || info.decision) && <DecisionBox stage={stage} taskId={task.id} />}
       {(taskKind(stage, task.id) === 'approval' || info.approval) && <ApprovalBox stage={stage} taskId={task.id} />}

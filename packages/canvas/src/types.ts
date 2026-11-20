@@ -125,7 +125,7 @@ export interface StageView {
   status: StageStatus;
   progress: [number, number];
   /** Live task claims (agent working on a task); a claim on a task covers its subtasks. */
-  claims?: { taskId: string; agent: string; expiresAt: string; heartbeatAt?: string; silent?: boolean; note?: string }[];
+  claims?: { taskId: string; agent: string; expiresAt: string; heartbeatAt?: string; silent?: boolean; stale?: boolean; by?: string; parent?: string; branch?: string; worktree?: string; note?: string }[];
   /** Per task id: a note and attached files (project-relative paths or links). */
   taskInfo?: Record<string, TaskInfo>;
   /** Proof per done task id: the check that was run (exit code 0). */
@@ -138,6 +138,7 @@ export interface TaskInfo {
   note?: string;
   files?: string[];
   kind?: 'approval' | 'decision';
+  status?: { step: 'claimed' | 'pushed' | 'merged' | 'verified' | 'accepted'; branch?: string; sha?: string; evidence?: string[]; at?: string; by?: string };
   approval?: { state: 'pending' | 'approved' | 'rejected'; reasons?: string[]; comment?: string; at?: string; by?: string; requested_by?: string; requested_at?: string };
   decision?: { question: string; options: { label: string; description?: string }[]; recommended?: number; choice?: string; at?: string; by?: string; asked_by?: string };
 }
@@ -147,6 +148,7 @@ export interface Evidence {
   command: string;
   exit_code: number;
   duration_ms?: number;
+  commit?: string;
   summary?: string;
   log?: string;
   at: string;
