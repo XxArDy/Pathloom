@@ -603,3 +603,69 @@ fn today_and_digest_json() {
     assert!(md.starts_with("## Digest ") && md.contains("### Overdue"), "{md}");
     assert!(!p.run(&["digest", "--since", "nope"]).status.success());
 }
+
+fn err_json(o: &std::process::Output) -> Value {
+    assert!(!o.status.success());
+    serde_json::from_slice(&o.stderr).unwrap()
+}
+
+#[test]
+fn session_set_upserts_and_logs_only_on_state_change() {
+    let p = Proj::new();
+    p.json(&["stage", "add", "A", "Alpha", "--direct"]);
+    p.json(&["task", "add", "A", "one"]);
+    let set = |state: &str| {
+        p.json(&["session", "set", "--client", "maestro", "--id", "s1", "--url", "maestro://s/1", "--title", "Auth", "--state", state, "--task", "A-01"])
+    };
+    assert_eq!(set("working")["changed"], true);
+    assert_eq!(set("working")["changed"], false);
+    assert_eq!(set("waiting")["changed"], true);
+    let s = &p.json(&["stage", "show", "A"])["sessions"][0];
+    assert_eq!((s["state"].as_str(), s["url"].as_str()), (Some("waiting"), Some("maestro://s/1")));
+    assert!(s["state_at"].is_string());
+    let log = p.json(&["log"]);
+    let n = log["entries"].as_array().unwrap().iter().filter(|e| e["action"] == "update_session").count();
+    assert_eq!(n, 2, "one entry per state change: {log}");
+    let bad = p.run(&["--json", "session", "set", "--client", "m", "--id", "1", "--state", "busy", "--task", "A-01"]);
+    assert_eq!(err_json(&bad)["code"], "INVALID_SPEC");
+    let none = p.run(&["--json", "session", "set", "--client", "m", "--id", "1", "--state", "done"]);
+    assert_eq!(err_json(&none)["code"], "INVALID_SPEC");
+}
+
+#[test]
+fn second_answer_is_already_decided() {
+    let p = Proj::new();
+    p.json(&["stage", "add", "A", "Alpha", "--direct"]);
+    p.json(&["task", "add", "A", "one"]);
+    p.json(&["task", "add", "A", "two"]);
+    p.json(&["approval", "request", "A-01"]);
+    p.json(&["approval", "approve", "A-01"]);
+    let e = err_json(&p.run(&["--json", "approval", "reject", "A-01", "--reason", "quality"]));
+    assert_eq!(e["code"], "ALREADY_DECIDED");
+    assert_eq!((e["details"]["by"].as_str(), e["details"]["state"].as_str()), (Some("me"), Some("approved")));
+    assert!(e["details"]["at"].is_string());
+
+    p.json(&["decision", "ask", "A-02", "--question", "Which?", "--option", "X", "--option", "Y"]);
+    p.json(&["decision", "answer", "A-02", "X"]);
+    let e = err_json(&p.run(&["--json", "decision", "answer", "A-02", "Y"]));
+    assert_eq!(e["code"], "ALREADY_DECIDED");
+    assert_eq!(e["details"]["choice"], "X");
+}
+
+#[test]
+fn task_done_stores_evidence_branch() {
+    let p = Proj::new();
+    p.json(&["stage", "add", "A", "Alpha", "--direct"]);
+    p.json(&["task", "add", "A", "one"]);
+    p.json(&["task", "done", "A-01", "--run", "exit 0", "--branch", "feat/x"]);
+    assert_eq!(p.json(&["stage", "show", "A"])["evidence"]["A-01"]["branch"], "feat/x");
+    p.json(&["task", "undo", "A-01"]);
+    let long = "b".repeat(201);
+    assert_eq!(err_json(&p.run(&["--json", "task", "done", "A-01", "--run", "exit 0", "--branch", &long]))["code"], "INVALID_SPEC");
+}
+
+#[test]
+fn watch_rejects_unknown_type() {
+    let p = Proj::new();
+    assert_eq!(err_json(&p.run(&["--json", "watch", "--type", "stage,bogus"]))["code"], "INVALID_SPEC");
+}

@@ -9,9 +9,9 @@ mod telegram;
 mod tpl;
 
 use clap::Parser;
-use cli::{AgentCmd, ApprovalCmd, BoardCmd, DecisionCmd, Cli, Cmd, GateCmd, ProposalCmd, SkillCmd, StageCmd, TaskCmd, TemplateCmd};
+use cli::{AgentCmd, ApprovalCmd, BoardCmd, DecisionCmd, Cli, Cmd, GateCmd, ProposalCmd, SessionCmd, SkillCmd, StageCmd, TaskCmd, TemplateCmd};
 use ops::{ApiError, ApiResult};
-use pathloom_core::events::{Event, EventWatcher};
+use pathloom_core::events::{Event, EventFilter, EventWatcher, passes};
 use pathloom_core::{ApplySpec, DepSpec, Place, Project, SessionRef, StageSpec};
 use serde_json::{Value, json};
 use std::io::Read;
@@ -33,11 +33,12 @@ fn main() -> ExitCode {
 }
 
 /// Run `cmd` through the system shell with inherited output and record it as evidence.
-fn run_check(cmd: &str, summary: &Option<String>, log: &Option<String>, commit: &Option<String>) -> ApiResult<pathloom_core::Evidence> {
+fn run_check(cmd: &str, summary: &Option<String>, log: &Option<String>, commit: &Option<String>, branch: &Option<String>) -> ApiResult<pathloom_core::Evidence> {
     let mut e = pathloom_core::run_check(cmd, None, false).map_err(|e| ApiError::new("IO_ERROR", e.to_string()))?;
     e.summary.clone_from(summary);
     e.log.clone_from(log);
     e.commit.clone_from(commit);
+    e.branch.clone_from(branch);
     Ok(e)
 }
 
@@ -293,7 +294,7 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
             let done = matches!(cli.command, Cmd::Task(TaskCmd::Done { .. }));
             let p = open(cli)?;
             let evidence = match &cli.command {
-                Cmd::Task(TaskCmd::Done { run: Some(cmd), summary, log, commit, .. }) => Some(run_check(cmd, summary, log, commit)?),
+                Cmd::Task(TaskCmd::Done { run: Some(cmd), summary, log, commit, branch, .. }) => Some(run_check(cmd, summary, log, commit, branch)?),
                 _ => None,
             };
             if let Some(e) = evidence.as_ref().filter(|e| !e.passed()) {
@@ -342,6 +343,8 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
                 id: i.clone(),
                 url: session_url.clone(),
                 title: session_title.clone(),
+                state: None,
+                state_at: None,
             });
             let actor = actor.clone().with_session(session)?;
             let d = pathloom_core::Delegation { by: by.clone(), parent: parent.clone(), branch: branch.clone(), worktree: worktree.clone() };
@@ -365,7 +368,7 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
             let p = open(cli)?;
             let st = p.load_stage(key)?;
             let check = st.check.clone().ok_or_else(|| ApiError::new("INVALID_SPEC", format!("{key} has no `check` command")))?;
-            let ev = run_check(&check, &None, &None, &None)?;
+            let ev = run_check(&check, &None, &None, &None, &None)?;
             let v = ops::set_gate(&p, &actor, key, ev)?;
             emit(cli, &v, || {
                 if v["passed"] == true { format!("Gate {key} passed") } else { format!("Gate {key} FAILED: `{check}`") }
@@ -708,10 +711,19 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
             let v = ops::remove_agent(&open(cli)?, &actor, id)?;
             emit(cli, &v, || format!("Removed profile {id}"));
         }
-        Cmd::Watch { since } => {
+        Cmd::Watch { since, stages, types } => {
             let p = open(cli)?;
             let since = since.as_deref().map(ops::parse_since).transpose()?;
-            watch(&p, cli.json, since.as_deref())?;
+            let filter = EventFilter { stages: stages.clone(), types: types.iter().map(|t| t.trim().to_lowercase()).collect() };
+            filter.validate().map_err(|m| ApiError::new("INVALID_SPEC", m))?;
+            watch(&p, cli.json, since.as_deref(), &filter)?;
+        }
+        Cmd::Session(SessionCmd::Set { client, id, url, title, state, task, stage }) => {
+            let state = state.as_deref().map(str::parse::<pathloom_core::SessionState>).transpose()?;
+            let session = SessionRef { client: client.clone(), id: id.clone(), url: url.clone(), title: title.clone(), state, state_at: None };
+            let actor = actor.clone().with_session(Some(session))?;
+            let v = ops::update_session(&open(cli)?, &actor, task.as_deref(), stage.as_deref())?;
+            emit(cli, &v, || format!("Session {id} on {}: {}", s(&v, "stage"), if v["changed"] == true { "state updated" } else { "no state change" }));
         }
         Cmd::Skill(SkillCmd::Install { dir, force }) => {
             let root = ops::locate_root(cli.project.as_deref())?;
@@ -748,7 +760,7 @@ fn print_event(e: &Event, json: bool) -> bool {
 }
 
 /// `pathloom watch`: `hello`, the log backlog since `since`, then live events until killed.
-fn watch(p: &Project, json: bool, since: Option<&str>) -> ApiResult<()> {
+fn watch(p: &Project, json: bool, since: Option<&str>, filter: &EventFilter) -> ApiResult<()> {
     // Start first so nothing that happens while we print the backlog is lost.
     let w = EventWatcher::start(p)?;
     if !print_event(&Event::hello(), json) {
@@ -756,13 +768,15 @@ fn watch(p: &Project, json: bool, since: Option<&str>) -> ApiResult<()> {
     }
     if let Some(since) = since {
         for entry in ops::entries_since(p, since)? {
-            if !print_event(&Event::Activity { entry }, json) {
+            let e = Event::Activity { entry };
+            if passes(&e, filter) && !print_event(&e, json) {
                 return Ok(());
             }
         }
     }
     loop {
         if let Some(e) = w.recv_timeout(std::time::Duration::from_secs(1))
+            && passes(&e, filter)
             && !print_event(&e, json)
         {
             return Ok(());

@@ -82,6 +82,20 @@ The user reads the plan as a picture, left to right. Follow these rules whenever
   A claim with a session also adds it to the stage's `sessions` history, and every log entry keeps it, so humans can jump back to that session.
   In `apply`, `stages[].sessions_add: [{client, id, url?, title?}]` records sessions on a stage (deduplicated by client+id, newest 20 kept).
 
+## Session state, human answers, returned tasks (orchestrators)
+- Publish what your session is doing: `update_session {session: {client, id, url?, title?, state}, task_id}` with `state` one of
+  `working | waiting | blocked | error | done` (CLI: `pathloom session set --client C --id I --state S --task ID`). The card shows the state and
+  a link to open your session. It is logged only when the state value changes, so call it at every change. Any other mutating call that
+  carries `session` with a `state` updates it too.
+- Relaying a human's answer: only when the project has `allow_client_answers = true` (otherwise `FORBIDDEN`). Then
+  `respond_approval {task_id, approve, reasons?, comment?, human}` and `answer_decision {task_id, choice, human}` record the answer as
+  `<you>:<human>`. `human` names the person who answered (1-64 characters) and must not be you: never answer for the user yourself.
+  The first answer wins: a second one fails with `ALREADY_DECIDED` (details: `by`, `at`, `state` for approvals, `choice` for decisions); tell the human it was already decided.
+- Reacting to answers without polling: `pathloom watch --json --type approval,decision,task --stage KEY`. `{"type":"task","change":"returned",...}`
+  means an approval was rejected (anyone): continue in the same session with its `comment` and `reasons`, then `request_approval` again.
+  `approval` events say `requested` / `decided`; `decision` events say `asked` / `answered`.
+- `evidence.branch` (up to 200 characters; CLI `pathloom task done ID --run CMD --branch NAME`) records the branch the check ran on, next to `commit`.
+
 ## Recommended workflow
 1. `project_info` first: `protocol` (`pathloom/1`), `version`, `capabilities` (what this server supports; a `--read-only` server has no mutating ones), boards, counts per status,
    the top 5 next tasks, `agent_changes` (review mode) and the `agents` profiles. Then `register_agent` once per session (see Identity and sessions).

@@ -154,7 +154,16 @@ pub enum Cmd {
         /// First replay activity-log entries newer than this time (RFC3339, e.g. 2026-11-05T10:00:00Z)
         #[arg(long, value_name = "RFC3339")]
         since: Option<String>,
+        /// Only events of this stage key (repeatable); events without a stage are not filtered
+        #[arg(long = "stage", value_name = "KEY")]
+        stages: Vec<String>,
+        /// Only these event types, comma-separated or repeated: stage, board, claims, activity, proposal, agents, approval, decision, task (`hello` always passes)
+        #[arg(long = "type", value_name = "TYPE", value_delimiter = ',')]
+        types: Vec<String>,
     },
+    /// Client sessions on the board: publish a session's state
+    #[command(subcommand)]
+    Session(SessionCmd),
     /// Agent Skills export
     #[command(subcommand)]
     Skill(SkillCmd),
@@ -289,6 +298,9 @@ pub enum TaskCmd {
         /// Commit the check ran on (7-40 hex sha)
         #[arg(long, requires = "run", value_name = "SHA")]
         commit: Option<String>,
+        /// Git branch the check ran on
+        #[arg(long, requires = "run")]
+        branch: Option<String>,
     },
     /// Set the delivery status of a task: claimed, pushed, merged, verified or accepted
     Status {
@@ -392,6 +404,32 @@ pub enum TemplateCmd {
         /// en | uk
         #[arg(long)]
         lang: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SessionCmd {
+    /// Upsert a client session on a task's (or a stage's) card and set its state
+    Set {
+        /// Client name, e.g. maestro
+        #[arg(long)]
+        client: String,
+        /// Session id in that client
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        url: Option<String>,
+        #[arg(long)]
+        title: Option<String>,
+        /// working | waiting | blocked | error | done
+        #[arg(long)]
+        state: Option<String>,
+        /// Task the session works on
+        #[arg(long, value_name = "ID", conflicts_with = "stage")]
+        task: Option<String>,
+        /// Stage key, when there is no task
+        #[arg(long, value_name = "KEY")]
+        stage: Option<String>,
     },
 }
 

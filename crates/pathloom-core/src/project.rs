@@ -117,6 +117,7 @@ impl Project {
             git: None,
             telegram: None,
             require_approval: false,
+            allow_client_answers: false,
         };
         let text = toml::to_string(&config).map_err(|e| parse_err(&cfg_path, e))?;
         write_atomic(&cfg_path, text.as_bytes())?;
@@ -144,6 +145,12 @@ impl Project {
     pub fn set_require_approval(&mut self, on: bool) -> Result<()> {
         // Off is the default and is not written (keeps the file as it was before the setting existed).
         self.update_config("require_approval", on.then(|| true.into()))
+    }
+
+    /// Whether MCP clients may relay a human's answers; saves `.pathloom/project.toml`.
+    pub fn set_allow_client_answers(&mut self, on: bool) -> Result<()> {
+        // Off is the default and is not written.
+        self.update_config("allow_client_answers", on.then(|| true.into()))
     }
 
     /// Sets (or, with an empty `read_ref`, removes) the `git` setting; saves `.pathloom/project.toml`.

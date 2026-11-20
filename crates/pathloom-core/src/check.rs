@@ -36,6 +36,7 @@ pub fn run_check(cmd: &str, cwd: Option<&Path>, quiet: bool) -> Result<Evidence>
         summary: None,
         log: None,
         commit: None,
+        branch: None,
         at: String::new(),
         by: String::new(),
     })

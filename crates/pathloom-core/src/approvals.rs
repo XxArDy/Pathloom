@@ -132,7 +132,8 @@ impl Project {
         Ok(s)
     }
 
-    /// The owner decides: approve ticks the task; reject un-ticks it, stores `reasons` and `comment`
+    /// The owner decides (first answer wins: a task whose approval is not pending fails with
+    /// [`Error::AlreadyDecided`]): approve ticks the task; reject un-ticks it, stores `reasons` and `comment`
     /// and adds `<by>: rejected <ID> [reasons]: <comment>` to the stage comments.
     pub fn decide_approval(&self, task_id: &str, approve: bool, reasons: &[String], comment: Option<&str>, by: &str) -> Result<Stage> {
         let reasons: Vec<String> = reasons.iter().map(|r| r.trim().to_string()).filter(|r| !r.is_empty()).collect();
@@ -146,6 +147,16 @@ impl Project {
                 return Err(Error::NotFound(format!("task {task_id}")));
             }
             let info = s.task_info.entry(task_id.to_string()).or_default();
+            // First answer wins. No approval record at all = the owner approves directly.
+            if let Some(a) = info.approval.as_ref().filter(|a| a.state != ApprovalState::Pending) {
+                return Err(Error::AlreadyDecided {
+                    task_id: task_id.into(),
+                    what: "approval",
+                    by: a.by.clone(),
+                    at: a.at.clone(),
+                    value: a.state.as_str().into(),
+                });
+            }
             let mut a = info.approval.take().unwrap_or_default();
             a.at = now_rfc3339();
             a.by = by.into();
@@ -245,7 +256,7 @@ impl Project {
         })
     }
 
-    /// The owner answers (`choice`: an option label or free text, <= 2000): records `choice, at, by` and ticks the task.
+    /// The owner answers (first answer wins: an answered decision fails with [`Error::AlreadyDecided`]) (`choice`: an option label or free text, <= 2000): records `choice, at, by` and ticks the task.
     pub fn answer_decision(&self, task_id: &str, choice: &str, by: &str) -> Result<Stage> {
         let choice = clean(choice);
         if choice.is_empty() {
@@ -258,6 +269,15 @@ impl Project {
                 .get_mut(task_id)
                 .and_then(|i| i.decision.as_mut())
                 .ok_or_else(|| Error::NotFound(format!("decision of {task_id}")))?;
+            if let Some(c) = &d.choice {
+                return Err(Error::AlreadyDecided {
+                    task_id: task_id.into(),
+                    what: "decision",
+                    by: d.by.clone(),
+                    at: d.at.clone(),
+                    value: c.clone(),
+                });
+            }
             (d.choice, d.at, d.by) = (Some(choice), now_rfc3339(), by.into());
             mark_done(s, task_id, true)
         })?;

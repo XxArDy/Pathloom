@@ -1,4 +1,5 @@
-//! Links to external client sessions (Maestro, Codex, ...): `{client, id, url?, title?}` (m7 contract §4).
+//! Links to external client sessions (Maestro, Codex, ...): `{client, id, url?, title?, state?, state_at?}`
+//! (m7 contract §4, m10 §Б1).
 
 use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
@@ -19,6 +20,32 @@ pub struct SessionRef {
     /// Up to 120 characters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// Live state published by the client (m10 §Б1): working | waiting | blocked | error | done.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<SessionState>,
+    /// When `state` was last set (RFC3339 UTC). Set by Pathloom.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_at: Option<String>,
+}
+
+/// What the session is doing right now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum SessionState {
+    Working,
+    Waiting,
+    Blocked,
+    Error,
+    Done,
+}
+
+impl std::str::FromStr for SessionState {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        serde_json::from_value(serde_json::Value::String(s.trim().to_lowercase()))
+            .map_err(|_| bad(format!("session state `{s}` must be working|waiting|blocked|error|done")))
+    }
 }
 
 fn bad(msg: impl Into<String>) -> Error {
@@ -37,6 +64,8 @@ impl SessionRef {
             id: self.id.trim().to_string(),
             url: clean(self.url),
             title: clean(self.title),
+            state: self.state,
+            state_at: clean(self.state_at),
         };
         s.validate()?;
         Ok(s)
@@ -58,6 +87,9 @@ impl SessionRef {
         if let Some(u) = &self.url {
             crate::url::check_session(u)?;
         }
+        if self.state_at.as_ref().is_some_and(|t| t.len() > 40 || t.chars().any(char::is_control)) {
+            return Err(bad("session state_at must be an RFC3339 time"));
+        }
         Ok(())
     }
 
@@ -67,16 +99,41 @@ impl SessionRef {
 }
 
 /// Add `s` to `list` (dedup by client+id: the old entry is replaced and moves to the end, keeping its
-/// `url`/`title` when `s` has none). Keeps only the newest [`MAX_STAGE_SESSIONS`].
-pub(crate) fn push_session(list: &mut Vec<SessionRef>, mut s: SessionRef) {
+/// `url`/`title`/`state` when `s` has none). Keeps only the newest [`MAX_STAGE_SESSIONS`].
+/// A given `state` gets `state_at` = now. Returns whether the state value changed
+/// (a new state on a new entry counts as a change).
+pub(crate) fn push_session(list: &mut Vec<SessionRef>, mut s: SessionRef) -> bool {
+    let mut old_state = None;
     if let Some(i) = list.iter().position(|x| x.same(&s)) {
         let old = list.remove(i);
+        old_state = old.state;
         s.url = s.url.or(old.url);
         s.title = s.title.or(old.title);
+        if s.state.is_none() {
+            (s.state, s.state_at) = (old.state, old.state_at);
+        }
     }
+    if s.state.is_some() {
+        s.state_at = Some(crate::fsutil::now_rfc3339());
+    }
+    let changed = s.state.is_some() && s.state != old_state;
     list.push(s);
     if list.len() > MAX_STAGE_SESSIONS {
         list.drain(..list.len() - MAX_STAGE_SESSIONS);
+    }
+    changed
+}
+
+impl crate::project::Project {
+    /// Upsert `session` into the `sessions` of stage `key` (m10 §Б1). Returns whether the state value changed.
+    pub fn update_session(&self, key: &str, session: SessionRef) -> Result<bool> {
+        let session = session.normalize()?;
+        let mut changed = false;
+        self.edit_stage(key, |st| {
+            changed = push_session(&mut st.sessions, session);
+            Ok(())
+        })?;
+        Ok(changed)
     }
 }
 
@@ -85,7 +142,7 @@ mod tests {
     use super::*;
 
     fn s(client: &str, id: &str, url: Option<&str>) -> SessionRef {
-        SessionRef { client: client.into(), id: id.into(), url: url.map(Into::into), title: None }
+        SessionRef { client: client.into(), id: id.into(), url: url.map(Into::into), title: None, state: None, state_at: None }
     }
 
     #[test]
@@ -105,8 +162,33 @@ mod tests {
         let mut t = s("m", "1", None);
         t.title = Some("x".repeat(121));
         assert!(t.normalize().is_err());
-        let n = SessionRef { client: " m ".into(), id: " 1 ".into(), url: Some(" ".into()), title: Some(" T ".into()) }.normalize().unwrap();
+        let n = SessionRef { client: " m ".into(), id: " 1 ".into(), url: Some(" ".into()), title: Some(" T ".into()), state: None, state_at: None }.normalize().unwrap();
         assert_eq!((n.client.as_str(), n.id.as_str(), n.url, n.title.as_deref()), ("m", "1", None, Some("T")));
+    }
+
+    #[test]
+    fn state_round_trip_and_old_json() {
+        let old: SessionRef = serde_json::from_str(r#"{"client":"m","id":"1"}"#).unwrap();
+        assert_eq!((old.state, old.state_at.as_deref()), (None, None));
+        assert_eq!(serde_json::to_string(&old).unwrap(), r#"{"client":"m","id":"1"}"#);
+        let mut n = s("m", "1", None);
+        n.state = Some("Blocked".parse().unwrap());
+        let back: SessionRef = serde_json::from_str(&serde_json::to_string(&n).unwrap()).unwrap();
+        assert_eq!(back.state, Some(SessionState::Blocked));
+        assert!("busy".parse::<SessionState>().is_err());
+        assert!(serde_json::from_str::<SessionRef>(r#"{"client":"m","id":"1","state":"busy"}"#).is_err());
+    }
+
+    #[test]
+    fn push_keeps_old_state_and_reports_change() {
+        let mut l = vec![];
+        let with = |st| SessionRef { state: Some(st), ..s("m", "1", None) };
+        assert!(push_session(&mut l, with(SessionState::Working)));
+        assert!(l[0].state_at.is_some());
+        assert!(!push_session(&mut l, with(SessionState::Working)));
+        assert!(!push_session(&mut l, s("m", "1", None)), "no state given: nothing changes");
+        assert_eq!(l[0].state, Some(SessionState::Working));
+        assert!(push_session(&mut l, with(SessionState::Done)));
     }
 
     #[test]

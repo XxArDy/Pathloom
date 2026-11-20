@@ -51,7 +51,7 @@ pub use hash::hash_bytes;
 pub use next::NextTask;
 pub use proposals::{Decision, DecisionState, FileChange, Proposal, ProposalFilter};
 pub use protocol::{PROTOCOL, capabilities};
-pub use session::{MAX_STAGE_SESSIONS, SessionRef};
+pub use session::{MAX_STAGE_SESSIONS, SessionRef, SessionState};
 pub use validate::Issue;
 pub use error::{Error, Result};
 pub use evidence::Evidence;

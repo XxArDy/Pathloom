@@ -90,9 +90,15 @@ A GitHub Spec Kit `tasks.md` (phases with `- [ ] T001 ...`) becomes stages with 
 
 If you run inside an app with its own session id (an orchestrator, an IDE chat), pass `session {client, id, url?, title?}` to `claim_task` and other mutating tools. The stage keeps the link so the user can jump back to the conversation where the work happened. `url` may be `https://…` or the app's own scheme (`maestro://…`).
 
+If you are an orchestrator, publish your live state with `update_session {session: {client, id, url?, title?, state}, task_id}` (`state`: `working|waiting|blocked|error|done`; CLI `pathloom session set --client C --id I --state S --task ID`). It is logged only when the state changes, and any mutating call carrying `session` with a `state` updates it too.
+
 ## Watching for changes
 
-`pathloom watch --json` streams NDJSON events (`hello`, `stage`, `board`, `claims`, `activity`, `proposal`, `agents`) so a client can react to edits by the user or other agents without polling. Use `--since <RFC3339>` to catch up first.
+`pathloom watch --json` streams NDJSON events (`hello`, `stage`, `board`, `claims`, `activity`, `proposal`, `agents`, `approval`, `decision`, `task`) so a client can react to edits by the user or other agents without polling. Use `--since <RFC3339>` to catch up first. Filter with `--stage KEY` (repeatable) and `--type approval,decision,task`. A `task` event with `change: returned` means an approval was rejected: continue the same session with its `comment` and `reasons`, then `request_approval` again.
+
+## Relaying a human's answer
+
+Only when the project allows it (`allow_client_answers = true`; otherwise `FORBIDDEN`): `respond_approval {task_id, approve, reasons?, comment?, human}` and `answer_decision {task_id, choice, human}`. `human` names the person who answered (1-64 characters) and must not be you; never answer for the user. The first answer wins: a second one fails with `ALREADY_DECIDED` (details `by`, `at`, `state`/`choice`), so tell the person it was already decided.
 
 ## Review mode
 

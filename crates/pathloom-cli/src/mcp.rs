@@ -189,6 +189,41 @@ struct RequestApprovalParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct UpdateSessionParams {
+    /// Your session: client, id, url?, title?, state (working | waiting | blocked | error | done)
+    session: SessionRef,
+    /// Task the session works on (its stage gets the session)
+    task_id: Option<String>,
+    /// Stage key, when there is no task
+    stage: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct RespondApprovalParams {
+    /// Task in review
+    task_id: String,
+    /// true = approve, false = reject
+    approve: bool,
+    /// Rejection reasons (up to 10 short ones)
+    reasons: Option<Vec<String>>,
+    comment: Option<String>,
+    /// The person who answered, 1-64 characters. Never your own name: you only relay what a human said.
+    human: String,
+    session: Option<SessionRef>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct AnswerDecisionParams {
+    /// Task with an open decision
+    task_id: String,
+    /// An option label or free text
+    choice: String,
+    /// The person who answered, 1-64 characters. Never your own name.
+    human: String,
+    session: Option<SessionRef>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct GetApprovalsParams {
     /// pending | approved | rejected | all (default all)
     state: Option<String>,
@@ -585,6 +620,39 @@ impl PathloomServer {
             self.guard()?;
             let actor = self.actor(&ctx, a.session)?;
             ops::request_approval(&self.project()?, &actor, &a.task_id, &a.files.unwrap_or_default(), a.note.as_deref())
+        })())
+    }
+
+    #[tool(
+        description = "Publish the live state of your session on the board: session {client, id, url?, title?, state: working | waiting | blocked | error | done} plus task_id (or stage). The card shows the state and a link to open your session. Logged only when the state changes; call it at every change. Any other call that carries `session` with a state updates it too.",
+        annotations(idempotent_hint = true)
+    )]
+    async fn update_session(&self, Parameters(a): Parameters<UpdateSessionParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
+        finish((|| {
+            self.guard()?;
+            ops::update_session(&self.project()?, &self.actor(&ctx, Some(a.session))?, a.task_id.as_deref(), a.stage.as_deref())
+        })())
+    }
+
+    #[tool(
+        description = "Relay a human's answer to a task in review (approve or reject). Only when the project has allow_client_answers = true (otherwise FORBIDDEN); `human` names the person who answered and must not be you. The first answer wins: a task already decided fails with ALREADY_DECIDED (details: by, at, state). Never decide for the user."
+    )]
+    async fn respond_approval(&self, Parameters(a): Parameters<RespondApprovalParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
+        finish((|| {
+            self.guard()?;
+            let actor = self.actor(&ctx, a.session)?;
+            ops::respond_approval(&self.project()?, &actor, &a.task_id, a.approve, &a.reasons.unwrap_or_default(), a.comment.as_deref(), &a.human)
+        })())
+    }
+
+    #[tool(
+        description = "Relay a human's answer to an open decision (see list_decisions): choice is an option label or free text. Only when the project has allow_client_answers = true (otherwise FORBIDDEN); `human` names the person who answered and must not be you. The first answer wins: ALREADY_DECIDED (details: by, at, choice) otherwise."
+    )]
+    async fn answer_decision(&self, Parameters(a): Parameters<AnswerDecisionParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
+        finish((|| {
+            self.guard()?;
+            let actor = self.actor(&ctx, a.session)?;
+            ops::answer_decision_for(&self.project()?, &actor, &a.task_id, &a.choice, &a.human)
         })())
     }
 

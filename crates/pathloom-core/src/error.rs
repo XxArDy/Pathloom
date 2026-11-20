@@ -37,6 +37,10 @@ pub enum Error {
     /// A `git` invocation failed (message = trimmed stderr, or why it could not start).
     #[error("git: {0}")]
     Git(String),
+    /// First answer wins: the approval or decision of the task was already answered.
+    /// `what` is `approval` (`value` = state) or `decision` (`value` = choice).
+    #[error("{what} of {task_id} is already decided by {by} at {at}: {value}")]
+    AlreadyDecided { task_id: String, what: &'static str, by: String, at: String, value: String },
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
