@@ -3,6 +3,26 @@
 All notable changes to Pathloom. Versions follow [Semantic Versioning](https://semver.org/); the file and MCP formats are versioned
 separately as `pathloom/1`.
 
+## Unreleased
+
+### Added
+- Proposals with a diff: approve or reject each one; a proposal made on an older version of a stage is flagged as a conflict. `apply` with `propose: true` sends a single change for review.
+- Approvals and decisions: agents request approval of a task (with files) or ask you to choose between options; rejections carry reasons and a comment and return the task to the agent. **Waiting for me** inbox (`pathloom inbox`). `pathloom approval require on` (`require_approval`) sends agent-closed tasks to review.
+- Telegram bridge `pathloom telegram` for approvals and the daily digest (token from `PATHLOOM_TELEGRAM_TOKEN`, chat id in `project.toml`).
+- Delivery status per task (`pathloom task status`, `set_task_status`), evidence with commit and branch, `pathloom commits`.
+- Usage per task and model, weekly-limit meter (`pathloom usage`, `report_usage`).
+- Read the board from a git ref; owner actions are committed or queued.
+- Today / Week view and `pathloom today`; reminders and `pathloom digest` (off by default).
+- Plan templates: built-in (product launch, book, renovation, course) and your own; `pathloom init --template`, `pathloom template list|apply|save`.
+- Quick add in plain words (`pathloom add`, `Ctrl+N`).
+- Timeline with critical path; stage `estimate` (days); `pathloom schedule`.
+- Export to Markdown, CSV, GitHub issues and read-only HTML (`pathloom export`); import from Markdown, CSV, Trello, Notion and Spec Kit (`pathloom import`).
+- Change history with revert of one change (`pathloom history`, `pathloom revert`).
+- For orchestrators: session state (`pathloom session set`, `update_session`), shared approval queue for clients (`respond_approval`, `answer_decision`, only with `allow_client_answers = true`), `approval`, `decision` and `task` events, `pathloom watch --json --stage --type`, `pathloom://open?...` deep links (`pathloom deeplink`, `make_link`).
+
+### Changed
+- A second answer to an already decided approval or decision now fails with `ALREADY_DECIDED` (details: who, when, and the state or choice) instead of overwriting the first answer. The first answer wins, in the app, CLI, MCP and Telegram.
+
 ## 0.1.0 (beta) - 2026-11-05
 
 First public release.

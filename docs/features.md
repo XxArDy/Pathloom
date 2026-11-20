@@ -6,6 +6,20 @@
 
 Принцип відбору MVP: один повний сценарій «відкрив папку → намалював/AI згенерував план → бачу, що робити далі → відмічаю прогрес → git commit». Все, що не служить цьому сценарію, — пізніше.
 
+## Статус: зроблено після MVP
+
+Контракти: [m9-approvals-contracts.md](m9-approvals-contracts.md), [m10-people-orchestrators-contracts.md](m10-people-orchestrators-contracts.md).
+
+- Пропозиції з diff, схвалення й перевірка (`require_approval`), рішення з варіантами, вхідні «Чекає на мене».
+- Делегування, статус задачі (взято/запушено/злито/перевірено/прийнято), доказ із комітом і гілкою, `pathloom commits`.
+- Використання за задачею й моделлю, лічильник тижневого ліміту.
+- Читання дошки з git-ref; дії власника комітяться або стають у чергу.
+- Telegram-міст (`pathloom telegram`, токен у `PATHLOOM_TELEGRAM_TOKEN`).
+- Шаблони (вбудовані й власні), «Сьогодні / Тиждень» (`pathloom today`), нагадування й щоденний підсумок (`pathloom digest`), швидке додавання (`pathloom add`, `Ctrl+N`).
+- Таймлайн із критичним шляхом і `estimate` (`pathloom schedule`).
+- Експорт md/csv/github/html (`pathloom export`), імпорт md/csv/trello/notion/spec-kit (`pathloom import`), історія з відкатом (`pathloom history`, `pathloom revert`).
+- Для оркестраторів: стан сесії (`pathloom session set`, `update_session`), спільна черга погоджень (`respond_approval`, `answer_decision`, `allow_client_answers`), події й `watch --json --stage --type`, посилання `pathloom://open?...` (`pathloom deeplink`).
+
 ## MVP
 
 ### Полотно

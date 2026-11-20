@@ -39,6 +39,12 @@ Everything is local. No account, no cloud.
 | **Focus mode** | `E` hides finished work and highlights what you can do right now. |
 | **Views** | Board, List (all tasks with filters), Overview (progress, what's next, blockers, deadlines, latest notes). |
 | **Agents** | `pathloom` CLI and `pathloom mcp` server, live reload, change highlights, one-click undo of agent changes, review mode with proposals shown as dashed cards. |
+| **Approvals** | Review mode with a diff for every proposal (approve or reject, with reasons). Agents can ask you to approve a task or to choose between options; **Waiting for me** collects everything that needs you. Optionally agents cannot close tasks, they send them to review (`require_approval`). Answer from the app or from Telegram (`pathloom telegram`). |
+| **Delivery proof** | Evidence records the commit and branch the check ran on; `pathloom commits` finds commits that name a stage or task (`AUTH-02: ...`). Delivery status per task: claimed, pushed, merged, verified, accepted. |
+| **Usage** | Tokens and cost per task and per model, plus a weekly-limit meter reported by agents. |
+| **Plan for people** | **Today / Week** view (overdue, due, blocked, waiting for you), reminders and a daily digest (off by default), quick add in plain words (`Ctrl+N`: *add task X to stage AUTH by friday*; understands English and Ukrainian phrases), **Timeline** with the critical path and a stage `estimate`, templates (product launch, book, renovation, course, or save your own). |
+| **Share and move** | Export to Markdown, CSV, GitHub issues or a read-only HTML page; import from Markdown, CSV, Trello, Notion and Spec Kit. Change history with revert of a single change. |
+| **Git** | Read the board from a git ref (a branch or tag) without checking it out; your actions are committed or queued. |
 | **Comfort** | `Ctrl+K` command palette, rebindable shortcuts that work on any keyboard layout, Graphite / Light / Warm paper themes plus your own theme files, English and Ukrainian UI. |
 
 <table>
@@ -173,7 +179,14 @@ Several agents can work on one plan at once: each one claims a task before start
 | `heartbeat` | "Still working" during long steps; after 10 silent minutes the card shows the agent as possibly stuck. |
 | `set_gate`, `report_usage` | Report a gate's check result; optionally report tokens and cost. |
 | `request_approval`, `get_approvals`, `ask_decision`, `list_decisions` | Ask the user to approve work or choose between options, and read the answer (reasons and comment on a rejection). |
-| `import_tasks` | Turn a GitHub Spec Kit `tasks.md` into stages, tasks and dependencies. |
+| `respond_approval`, `answer_decision` | For clients that relay a human's answer (for example a chat bridge). Off unless `allow_client_answers = true` in `.pathloom/project.toml`; the first answer wins. |
+| `update_session` | Publish a client session's state (`working`, `waiting`, `blocked`, `error`, `done`) on a task or stage card. |
+| `set_task_status`, `list_commits` | Delivery status of a task; commits that name a stage or task. |
+| `import_tasks`, `export_plan` | Import a plan (`md`, `csv`, `trello`, `notion`, `spec-kit`) or export it (`md`, `csv`, `github`, `html`). |
+| `list_templates`, `apply_template` | Start from a built-in or saved plan template. |
+| `parse_quick_add`, `schedule`, `agenda` | Quick add draft, dates and critical path, today/week agenda. |
+| `list_history`, `revert_change` | See what each action changed and undo one change. |
+| `list_proposals`, `decide_proposal`, `make_link` | Review proposals; make a `pathloom://` link to a stage or task. |
 | `layout_board`, `validate` | Tidy the board, check the plan for problems. |
 
 **Keeping the board readable.** Turn on *Auto-arrange* (bottom bar) and the board re-arranges itself whenever an agent changes the plan; the wand button arranges it once. Hover or select a card to light up what it waits for and what waits for it. In Settings you can switch off hiding implied arrows and grouping arrows between phases. Agents get rules for readable plans (phases in time order, a one-line description per stage, 3-8 tasks, only direct dependencies), and `validate` lists `hints` when a plan breaks them.
@@ -182,7 +195,11 @@ Several agents can work on one plan at once: each one claims a task before start
 
 **Several agents at once.** Stages can be assigned to a named agent (`who: ai:claude`, `ai:codex`) or person (`human:olia`) — each gets its own colour. An agent claims a task before working on it; the card shows who is on it, and other agents skip it. **Overview** shows who is working right now and a feed of agent activity (`.pathloom/log/agent.jsonl`).
 
-Prefer to approve changes first? Switch **Settings → AI agents → Ask me first**. Agent changes then arrive as proposals you accept or reject.
+Prefer to approve changes first? Switch **Settings → AI agents → Ask me first**. Agent changes then arrive as proposals you accept or reject; each one shows a diff, and an agent can also send a single change for review with `apply` and `propose: true`. If the plan changed while you were deciding, the proposal is flagged as a conflict instead of overwriting.
+
+**Approvals and questions.** An agent can ask you to approve a finished task (with files to look at) or to choose between options with a recommended one. Rejections carry reasons and a comment, and the task goes back to the agent (a `task` event with `change: returned`). Everything waiting for you is in **Waiting for me**. The first answer wins: a second answer to an already decided approval or decision fails with `ALREADY_DECIDED`. For notifications on your phone run `pathloom telegram` (bot token in the `PATHLOOM_TELEGRAM_TOKEN` environment variable, chat id in `project.toml`).
+
+**For orchestrators.** Client apps that run agents (for example a session manager) only need the public protocol: `pathloom watch --json [--stage KEY] [--type stage,approval,decision,task,...]` streams events, `update_session` / `pathloom session set` publishes session state, and `pathloom deeplink [ID]` makes a `pathloom://open?...` link that opens the project, a stage or a task in the app.
 
 ## The files
 
@@ -222,6 +239,15 @@ pathloom task done AUTH-01
 pathloom next
 pathloom apply plan.yaml --dry-run
 pathloom validate --fix
+pathloom today --week                 # what is due, blocked, waiting for you
+pathloom add "add task X to stage AUTH by friday" --yes
+pathloom schedule                     # dates and critical path
+pathloom inbox                        # approvals, decisions, tasks waiting for you
+pathloom digest --md                  # what was done, what is stuck
+pathloom export md                    # also: csv, github, html (-o FILE)
+pathloom import trello board.json     # also: md, csv, notion, spec-kit (--dry-run)
+pathloom history && pathloom revert ID
+pathloom init --template book         # also: template list|apply|save
 ```
 
 Every command supports `--json`. See [crates/pathloom-cli/README.md](crates/pathloom-cli/README.md).

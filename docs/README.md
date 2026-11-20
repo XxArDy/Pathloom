@@ -16,6 +16,8 @@ Most design documents are written in Ukrainian (the project owner's language); c
 | [m6-agents-contracts.md](m6-agents-contracts.md) | uk | Several agents: claims, named assignees, activity log. |
 | [m7-clients-contracts.md](m7-clients-contracts.md) | uk | External clients: protocol version, agent profiles, events, sessions. |
 | [m8-proof-contracts.md](m8-proof-contracts.md) | uk | Evidence, heartbeat, artifacts, gates, usage, Spec Kit import, readable boards. |
+| [m9-approvals-contracts.md](m9-approvals-contracts.md) | uk | Proposals with diff, approvals and review, decisions, owner inbox, delegation, usage, Telegram, git source. |
+| [m10-people-orchestrators-contracts.md](m10-people-orchestrators-contracts.md) | uk | For people without code (today, templates, quick add, timeline, import/export, history) and orchestrators (session state, shared approvals, events, deep links). |
 | [discovery.md](discovery.md) | uk | Decision log (D1…) with reasons. |
 | [research.md](research.md) | uk | Libraries, licenses, risks, rejected options. |
 | [ideas.md](ideas.md) | uk | Backlog of ideas. |
