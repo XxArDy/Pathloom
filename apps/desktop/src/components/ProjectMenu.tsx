@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  IconChevronDown, IconPlus, IconFolderOpen, IconClock, IconX, IconLanguage, IconPalette, IconCheck, IconSettings, IconKeyboard, IconTemplate, IconDeviceFloppy,
+  IconChevronDown, IconPlus, IconFolderOpen, IconClock, IconX, IconLanguage, IconPalette, IconCheck, IconSettings, IconKeyboard, IconTemplate, IconDeviceFloppy, IconFileExport, IconFileImport, IconHistory,
 } from '@tabler/icons-react';
 import { api, errorText, type RecentProject } from '../api';
 import { useApp } from '../store';
@@ -59,6 +59,9 @@ export function ProjectMenu() {
           <button role="menuitem" onClick={() => run(() => openProject())}><IconFolderOpen size={15} />{t('menu.openFolder')}<kbd>{label('app.openFolder', keys)}</kbd></button>
           <button role="menuitem" onClick={() => { setOpen(false); set({ templateDialog: 'add' }); }}><IconTemplate size={15} />{t('tpl.add')}</button>
           <button role="menuitem" onClick={() => { setOpen(false); set({ templateDialog: 'save' }); }}><IconDeviceFloppy size={15} />{t('tpl.save')}</button>
+          <button role="menuitem" onClick={() => { setOpen(false); set({ peopleDialog: 'export' }); }}><IconFileExport size={15} />{t('people.export.menu')}</button>
+          <button role="menuitem" onClick={() => { setOpen(false); set({ peopleDialog: 'import' }); }}><IconFileImport size={15} />{t('people.import.menu')}</button>
+          <button role="menuitem" onClick={() => { setOpen(false); set({ peopleDialog: 'history' }); }}><IconHistory size={15} />{t('people.history.menu')}</button>
           {others.length > 0 && <div className="pm-sec">{t('start.recent')}</div>}
           {others.map((r) => (
             <div key={r.path} className="pm-recent">

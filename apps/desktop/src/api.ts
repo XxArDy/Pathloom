@@ -31,6 +31,14 @@ export interface Digest {
 }
 export interface TemplateInfo { id: string; title: string; description: string; builtin: boolean }
 
+export interface QuickDraft { title: string; stage: string | null; due: string | null; who: string | null; unmatched: string[] }
+export interface ScheduleItem { key: string; title: string; start: string; finish: string; slack: number | null; float: number; critical: boolean; estimate: number }
+export interface Schedule { today: string; items: ScheduleItem[]; finish: string }
+export type ExportFormat = 'html' | 'md' | 'csv' | 'github';
+export type ImportFormat = 'md' | 'csv' | 'trello' | 'notion';
+export interface ImportPreview { stages: number; tasks: number; created: string[]; updated: string[]; warnings: string[] }
+export interface HistoryRow { id: string; at: string; action: string; files: string[] }
+
 export interface StageMeta {
   check?: string;
   title?: string;
@@ -39,6 +47,8 @@ export interface StageMeta {
   priority?: StageView['priority'];
   due?: string;
   branch?: string;
+  /** Days; 0 clears. */
+  estimate?: number;
 }
 
 export interface RecentProject {
@@ -118,6 +128,14 @@ export const api = {
   templateApply: (id: string, lang: string) => invoke<StageView[]>('template_apply', { id, lang }),
   templateSave: (name: string, title: string) => invoke<string>('template_save', { name, title }),
   stageUnlink: (from: string, to: string) => invoke<StageView[]>('stage_unlink', { from, to }),
+  quickAddParse: (text: string, today: string) => invoke<QuickDraft>('quick_add_parse', { text, today }),
+  quickAddApply: (title: string, stage: string, due: string | null) => invoke<{ note: string | null; stages: StageView[] }>('quick_add_apply', { title, stage, due }),
+  schedule: (today: string) => invoke<Schedule>('schedule', { today }),
+  exportWrite: (format: ExportFormat, path: string) => invoke<void>('export_write', { format, path }),
+  importPreview: (format: ImportFormat, path: string) => invoke<ImportPreview>('import_preview', { format, path }),
+  importApply: (format: ImportFormat, path: string) => invoke<StageView[]>('import_apply', { format, path }),
+  historyList: (limit: number) => invoke<HistoryRow[]>('history_list', { limit }),
+  historyRevert: (id: string) => invoke<StageView[]>('history_revert', { id }),
 };
 
 /** URL of a project asset (plan/assets/...) served by the app's `plasset` protocol. */

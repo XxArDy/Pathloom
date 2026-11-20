@@ -3,6 +3,7 @@
 
 mod deeplink;
 mod gitmode;
+mod people;
 mod recent;
 mod watch;
 
@@ -890,6 +891,7 @@ pub fn run() {
             template_new,
             template_apply,
             template_save,
+            people::quick_add_parse, people::quick_add_apply, people::schedule, people::export_write, people::import_preview, people::import_apply, people::history_list, people::history_revert,
         ])
         .run(tauri::generate_context!());
     if let Err(err) = result {

@@ -415,3 +415,29 @@ pre.code { font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6; b
 .sess-state.st-waiting i { background: var(--warn); }
 .sess-state.st-blocked i, .sess-state.st-error i { background: var(--bad); }
 .sess-state.st-done i { background: var(--ok); }
+/* Timeline, quick add, export/import and history (m10) */
+.people-body { padding: 8px 18px 18px; overflow-y: auto; }
+.people-fields { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; align-items: center; margin: 0; }
+.people-fields dt { color: var(--mu); font-size: 12px; }
+.people-fields dd { margin: 0; }
+.people-fields input, .people-fields select { width: 100%; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--bd); background: var(--card); color: var(--tx); }
+.hist-list { list-style: none; margin: 0; padding: 0; }
+.hist-list li { display: flex; align-items: center; gap: 12px; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--bd); }
+.hist-files { font-size: 11px; word-break: break-all; }
+.timeline { height: 100%; overflow: auto; padding: 18px 24px; }
+.timeline .ag-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.timeline .ag-head h2 { font-size: 16px; font-weight: 600; }
+.timeline .ag-meta { color: var(--mu); font-size: 12px; }
+.tl-key { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--ac); margin-right: 6px; }
+.tl-grid { min-width: 640px; }
+.tl-row { display: grid; grid-template-columns: 200px 1fr; align-items: center; gap: 12px; min-height: 30px; }
+.tl-row.sel .tl-label { color: var(--ac); }
+.tl-label { text-align: left; background: none; border: 0; color: var(--tx); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 4px 0; }
+.tl-track { position: relative; height: 26px; }
+.tl-axis { min-height: 20px; }
+.tl-tick { position: absolute; top: 0; font-size: 10px; color: var(--mu); transform: translateX(-50%); }
+.tl-today { position: absolute; top: -2px; bottom: -2px; width: 0; border-left: 2px dashed var(--warn); pointer-events: none; }
+.tl-bar { position: absolute; top: 5px; height: 16px; min-width: 4px; border-radius: 5px; border: 0; padding: 0; background: var(--card2); outline: 1px solid var(--bd2); cursor: pointer; }
+.tl-bar.crit { background: var(--ac); outline: none; }
+.tl-bar.zero { opacity: .45; }
+.tl-note { position: absolute; top: 5px; font-size: 11px; color: var(--mu); white-space: nowrap; line-height: 16px; }

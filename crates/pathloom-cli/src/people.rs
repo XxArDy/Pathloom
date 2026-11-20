@@ -2,7 +2,7 @@
 
 use crate::agenda::local_today;
 use crate::ops::{self, ApiError, ApiResult};
-use pathloom_core::{ApplySpec, Project, StageSpec};
+use pathloom_core::Project;
 use serde_json::{Value, json};
 
 fn to_json<T: serde::Serialize>(v: &T) -> ApiResult<Value> {
@@ -23,19 +23,13 @@ pub fn add(p: &Project, text: &str, yes: bool, author: &str) -> ApiResult<Value>
     if !yes {
         return Ok(v);
     }
-    let bad = |m: &str| ApiError::new("INVALID_SPEC", m.to_string());
-    let title = v["title"].as_str().filter(|t| !t.is_empty()).ok_or_else(|| bad("no task title found"))?.to_string();
-    let key = v["stage"].as_str().ok_or_else(|| bad("no stage recognized: say `to stage <name>`"))?.to_string();
-    let stage = p.load_stage(&key)?;
-    let mut st = StageSpec { id: Some(key.clone()), tasks: vec![title], ..Default::default() };
-    if let Some(due) = v["due"].as_str() {
-        if stage.due.is_none() {
-            st.due = Some(due.into());
-        } else {
-            v["note"] = json!(format!("stage {key} already has a due date; the new one was not applied"));
-        }
+    let stages: Vec<(String, String)> = p.load_stages()?.into_iter().map(|s| (s.key, s.title)).collect();
+    let draft = pathloom_core::parse_quick_add(text, &stages, &local_today());
+    let (spec, note) = p.quick_add_spec(&draft)?;
+    if let Some(n) = note {
+        v["note"] = json!(n);
     }
-    let r = ops::submit(p, &ApplySpec { stages: vec![st], ..Default::default() }, author, false, false)?;
+    let r = ops::submit(p, &spec, author, false, false)?;
     v["applied"] = json!(r["mode"] == "applied");
     v["result"] = r;
     Ok(v)

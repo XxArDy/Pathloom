@@ -258,6 +258,8 @@ export function Inspector({ stageKey }: { stageKey: string }) {
               </dd>
               <dt><IconCalendar size={14} />{t('inspector.due')}</dt>
               <dd><input type="date" value={stage.due ?? ''} onChange={(e) => update({ due: e.target.value })} /></dd>
+              <dt>{t('inspector.estimate')}</dt>
+              <dd><input key={stage.estimate ?? 0} type="number" min={0} max={365} defaultValue={stage.estimate ?? ''} placeholder="1" onBlur={(e) => { const v = Math.max(0, Math.floor(Number(e.currentTarget.value) || 0)); if (v !== (stage.estimate ?? 0)) update({ estimate: v }); }} /></dd>
               <dt><IconGitBranch size={14} />{t('inspector.branch')}</dt>
               <dd>
                 <input
