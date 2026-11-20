@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { IconFolderOpen, IconPlus, IconClock, IconSparkles, IconX } from '@tabler/icons-react';
+import { IconFolderOpen, IconPlus, IconClock, IconSparkles, IconX, IconTemplate } from '@tabler/icons-react';
 import { useApp } from '../store';
 import { api, errorText, type RecentProject } from '../api';
 import { createProject, openProject } from '../projectActions';
 import { AppMark } from './AppMark';
+import { TemplateDialog } from './TemplateDialog';
 
 export function StartScreen() {
   const { t, i18n } = useTranslation();
   const enterProject = useApp((s) => s.enterProject);
   const [recent, setRecent] = useState<RecentProject[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [tpl, setTpl] = useState(false);
 
   useEffect(() => {
     api.recentProjects().then(setRecent).catch(() => setRecent([]));
@@ -32,6 +34,7 @@ export function StartScreen() {
         <p className="tagline">{t('start.tagline')}</p>
         <div className="start-actions">
           <button className="btn pri lg" onClick={() => run(createProject)}><IconPlus size={18} />{t('start.newProject')}</button>
+          <button className="btn lg" onClick={() => setTpl(true)}><IconTemplate size={18} />{t('tpl.new')}</button>
           <button className="btn lg" onClick={() => run(() => openProject())}><IconFolderOpen size={18} />{t('start.openFolder')}</button>
           <button className="btn lg" onClick={() => run(async () => enterProject(await api.demoOpen(i18n.language)))}><IconSparkles size={18} />{t('start.demo')}</button>
         </div>
@@ -54,6 +57,7 @@ export function StartScreen() {
           ))}
         </ul>
       </div>
+      {tpl && <TemplateDialog mode="new" onClose={() => setTpl(false)} />}
     </div>
   );
 }

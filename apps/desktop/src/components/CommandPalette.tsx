@@ -47,6 +47,9 @@ export function CommandPalette() {
             <Command.Item value="view board" onSelect={run(() => set({ view: 'board' }))}>{t('views.board')}</Command.Item>
             <Command.Item value="view list" onSelect={run(() => set({ view: 'list' }))}>{t('views.list')}</Command.Item>
             <Command.Item value="view overview" onSelect={run(() => set({ view: 'overview' }))}>{t('views.overview')}</Command.Item>
+            <Command.Item value="view agenda today week" onSelect={run(() => set({ view: 'agenda' }))}>{t('views.agenda')}</Command.Item>
+            <Command.Item value="template add from" onSelect={run(() => set({ templateDialog: 'add' }))}>{t('tpl.add')}</Command.Item>
+            <Command.Item value="template save plan as" onSelect={run(() => set({ templateDialog: 'save' }))}>{t('tpl.save')}</Command.Item>
             <Command.Item value="focus" onSelect={run(() => { const s = useApp.getState(); s.set({ exec: !s.exec, view: 'board' }); })}>{t('commands.app.focus')}<span className="pal-meta">{label('app.focus', keys)}</span></Command.Item>
             <Command.Item value="open folder" onSelect={run(() => { openProject().catch((e) => set({ error: errorText(e) })); })}>{t('commands.app.openFolder')}</Command.Item>
             <Command.Item value="settings" onSelect={run(() => set({ settingsTab: 'general' }))}>{t('commands.app.settings')}</Command.Item>

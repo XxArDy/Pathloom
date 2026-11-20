@@ -22,6 +22,15 @@ export interface CommitRow { sha: string; subject: string; author: string; at: s
 
 export interface InboxItem { task_id: string; stage: string; title: string; kind: 'approval' | 'decision' | 'owner' }
 
+export interface AgendaItem { key: string; title: string; due: string | null; status: StageView['status']; who: string; progress: [number, number] }
+export interface Agenda { today: string; days: number; overdue: AgendaItem[]; due: AgendaItem[]; blocked: AgendaItem[]; waiting: InboxItem[] }
+export interface Digest {
+  since: string; today: string; done: unknown[];
+  stuck: { blocked: AgendaItem[]; overdue: AgendaItem[]; silent_claims: unknown[] };
+  waiting: InboxItem[];
+}
+export interface TemplateInfo { id: string; title: string; description: string; builtin: boolean }
+
 export interface StageMeta {
   check?: string;
   title?: string;
@@ -86,6 +95,12 @@ export const api = {
   decisionAnswer: (taskId: string, choice: string) => invoke<StageView[]>('decision_answer', { taskId, choice }),
   inboxList: () => invoke<InboxItem[]>('inbox_list'),
   evidenceRecheck: (taskId: string) => invoke<number>('evidence_recheck', { taskId }),
+  agenda: (today: string, days: number) => invoke<Agenda>('agenda', { today, days }),
+  digest: (since: string, today: string) => invoke<Digest>('digest', { since, today }),
+  templatesList: (lang: string) => invoke<TemplateInfo[]>('templates_list', { lang }),
+  templateNew: (path: string, name: string, id: string, lang: string) => invoke<ProjectSnapshot>('template_new', { path, name, id, lang }),
+  templateApply: (id: string, lang: string) => invoke<StageView[]>('template_apply', { id, lang }),
+  templateSave: (name: string, title: string) => invoke<string>('template_save', { name, title }),
   stageUnlink: (from: string, to: string) => invoke<StageView[]>('stage_unlink', { from, to }),
 };
 

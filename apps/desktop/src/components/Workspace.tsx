@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { IconX, IconMap, IconPlayerPlay, IconLock, IconLayoutBoard, IconListDetails, IconFocus2, IconChartDonut, IconSparkles, IconInbox } from '@tabler/icons-react';
+import { IconX, IconMap, IconPlayerPlay, IconLock, IconLayoutBoard, IconListDetails, IconFocus2, IconChartDonut, IconSparkles, IconInbox, IconCalendarEvent } from '@tabler/icons-react';
 import { useApp } from '../store';
 import { Sidebar } from './Sidebar';
 import { CanvasView } from './CanvasView';
@@ -12,6 +12,9 @@ import { InboxDialog } from './InboxDialog';
 import { AgentBanner } from './AgentBanner';
 import { ActiveAgents, UsageMeter } from './LiveBits';
 import { OverviewView } from './OverviewView';
+import { AgendaView } from './AgendaView';
+import { TemplateDialog } from './TemplateDialog';
+import { startReminders } from '../reminders';
 import { CommandPalette } from './CommandPalette';
 import { startAgentSync } from '../agentSync';
 import { effectiveKeymap, label, useAppShortcuts, useKeys } from '../keys';
@@ -85,6 +88,8 @@ export function Workspace() {
     return () => { alive = false; stop?.(); };
   }, [root]);
 
+  useEffect(() => startReminders(), []);
+
   return (
     <div className="ws">
       <Sidebar />
@@ -98,6 +103,7 @@ export function Workspace() {
             <button role="tab" aria-selected={view === 'board'} className={`btn sm ${view === 'board' ? 'on' : ''}`} onClick={() => set({ view: 'board' })}><IconLayoutBoard size={14} />{t('views.board')}</button>
             <button role="tab" aria-selected={view === 'list'} className={`btn sm ${view === 'list' ? 'on' : ''}`} onClick={() => set({ view: 'list' })}><IconListDetails size={14} />{t('views.list')}</button>
             <button role="tab" aria-selected={view === 'overview'} className={`btn sm ${view === 'overview' ? 'on' : ''}`} onClick={() => set({ view: 'overview' })}><IconChartDonut size={14} />{t('views.overview')}</button>
+            <button role="tab" aria-selected={view === 'agenda'} className={`btn sm ${view === 'agenda' ? 'on' : ''}`} onClick={() => set({ view: 'agenda' })}><IconCalendarEvent size={14} />{t('views.agenda')}</button>
           </div>
           {proposals.length > 0 && (
             <button className="btn sm pri" onClick={() => set({ proposalsOpen: true })}><IconSparkles size={14} />{t('proposals.button', { count: proposals.length })}</button>
@@ -110,6 +116,7 @@ export function Workspace() {
           {activeBoard ? <CanvasView key={activeBoard} /> : null}
           {view === 'list' && <div className="overlay-page"><ListView /></div>}
           {view === 'overview' && <div className="overlay-page"><OverviewView /></div>}
+          {view === 'agenda' && <div className="overlay-page"><AgendaView /></div>}
           <AgentBanner />
           {error && (
             <div className="toast" role="alert" onClick={() => set({ error: null })}>{error}</div>
@@ -121,6 +128,7 @@ export function Workspace() {
       <SettingsDialog />
       <ProposalsDialog />
       <InboxDialog />
+      <TemplateDialog />
       <CommandPalette />
     </div>
   );

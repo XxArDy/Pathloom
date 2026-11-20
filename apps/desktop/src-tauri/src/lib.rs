@@ -702,10 +702,61 @@ fn stage_unlink(state: State<'_, AppState>, from: String, to: String) -> CmdResu
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[tauri::command]
+fn agenda(state: State<'_, AppState>, today: String, days: u32) -> CmdResult<pathloom_core::Agenda> {
+    with_project(&state, |p| p.agenda(&today, days))
+}
+
+#[tauri::command]
+fn digest(state: State<'_, AppState>, since: String, today: String) -> CmdResult<pathloom_core::Digest> {
+    with_project(&state, |p| p.digest(&since, &today))
+}
+
+/// `PATHLOOM_TEMPLATES_DIR`, else `~/.pathloom/templates` (same rule as the CLI).
+fn templates_dir() -> Option<std::path::PathBuf> {
+    if let Some(d) = std::env::var_os("PATHLOOM_TEMPLATES_DIR") {
+        return Some(d.into());
+    }
+    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?;
+    Some(std::path::PathBuf::from(home).join(".pathloom").join("templates"))
+}
+
+#[tauri::command]
+fn templates_list(lang: String) -> Vec<pathloom_core::TemplateInfo> {
+    pathloom_core::list_templates(templates_dir().as_deref(), &lang)
+}
+
+/// New project in an (empty) folder, filled from a template.
+#[tauri::command]
+fn template_new(app: AppHandle, state: State<'_, AppState>, path: String, name: String, id: String, lang: String) -> CmdResult<ProjectSnapshot> {
+    let spec = pathloom_core::load_template(&id, &lang, templates_dir().as_deref()).map_err(|e| e.to_string())?;
+    let project = Project::init(Path::new(&path), &name).map_err(|e| e.to_string())?;
+    project.apply_template(spec).map_err(|e| e.to_string())?;
+    activate(&app, &state, project)
+}
+
+/// Add a template's stages to the open project.
+#[tauri::command]
+fn template_apply(state: State<'_, AppState>, id: String, lang: String) -> CmdResult<Vec<StageView>> {
+    with_project(&state, |p| {
+        let spec = pathloom_core::load_template(&id, &lang, templates_dir().as_deref())?;
+        p.apply_template(spec)?;
+        log_app(p, "template", &format!("applied template {id}"), vec![], vec![]);
+        views(p)
+    })
+}
+
+#[tauri::command]
+fn template_save(state: State<'_, AppState>, name: String, title: String) -> CmdResult<String> {
+    let dir = templates_dir().ok_or("cannot find the home folder")?;
+    with_project(&state, |p| Ok(p.save_as_template(&name, &title, &dir)?.display().to_string()))
+}
+
 pub fn run() {
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .register_uri_scheme_protocol("plasset", |ctx, request| serve_asset(ctx.app_handle(), request.uri().path()))
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
@@ -760,6 +811,12 @@ pub fn run() {
             decision_answer,
             inbox_list,
             evidence_recheck,
+            agenda,
+            digest,
+            templates_list,
+            template_new,
+            template_apply,
+            template_save,
         ])
         .run(tauri::generate_context!());
     if let Err(err) = result {
