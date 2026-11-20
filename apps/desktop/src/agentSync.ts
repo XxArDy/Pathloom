@@ -3,7 +3,7 @@
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import type { Ghost, StageView, Task } from '@pathloom/canvas';
-import { api, errorText } from './api';
+import { api, errorText, type GitStatus } from './api';
 import { editorRef, useApp } from './store';
 import i18n from './i18n';
 
@@ -117,6 +117,8 @@ export async function startAgentSync(): Promise<() => void> {
       .catch((err) => useApp.getState().set({ error: errorText(err) }));
   });
   const un2 = await listen('agents-changed', () => { void refreshAgents(); });
+  const un3 = await listen<GitStatus>('git-status', (e) => useApp.getState().set({ git: e.payload }));
+  api.gitStatus().then((git) => useApp.getState().set({ git })).catch(() => {});
   // "Silent agent" depends on the clock, not on files: while someone holds a claim, recheck every minute.
   const tick = window.setInterval(() => {
     if (useApp.getState().stages.some((s) => (s.claims ?? []).length)) void refreshAgents();
@@ -124,7 +126,7 @@ export async function startAgentSync(): Promise<() => void> {
   await refreshProposals();
   await refreshInbox();
   await refreshAgents();
-  return () => { un(); un2(); window.clearInterval(tick); };
+  return () => { un(); un2(); un3(); window.clearInterval(tick); };
 }
 
 /** Replaces the canvas board with the file on disk, discarding any derived pending save. */
@@ -164,7 +166,7 @@ export async function decideProposal(id: string, accept: boolean, comment?: stri
   const st = useApp.getState();
   await st.flushSave(); // keep the user's pending edits before the proposal rewrites the board
   const d = await agentApi.decide(id, accept, comment);
-  if (d.decision.state === 'conflict') st.set({ error: i18n.t('proposals.conflict') });
+  if (d.decision?.state === 'conflict') st.set({ error: i18n.t('proposals.conflict') });
   editorRef.current?.setGhosts([]);
   await reloadActiveBoard();
   st.setStages(await api.stagesList());

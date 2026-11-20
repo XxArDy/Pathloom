@@ -245,7 +245,10 @@
     "licenses": "Licenses",
     "licensesOpen": "Pathloom: MIT or Apache-2.0 · third-party licenses…",
     "quotaWarn": "Warn when the weekly limit reaches, %",
-    "quotaWarnHint": "The limit indicator in the header turns yellow from this value."
+    "quotaWarnHint": "The limit indicator in the header turns yellow from this value.",
+    "gitRef": "Read the board from git ref",
+    "gitInterval": "fetch every, s",
+    "gitHint": "Empty = off. The board and stages are read from this ref (e.g. origin/main) and refreshed after every fetch; your approvals are committed locally or queued while the working tree has changes. Pathloom never pushes."
   },
   "proposals": {
     "button": "Proposals ({{count}})",
@@ -420,5 +423,11 @@
     "active": "Active agents",
     "limit": "limit {{percent}}%",
     "resets": "resets {{at}}"
+  },
+  "git": {
+    "hint": "The board shows {{ref}}. Local edits appear after they are merged.",
+    "error": "Git: {{error}}",
+    "queued": "{{count}} queued owner actions",
+    "queuedHint": "Waiting for a clean working tree; they are committed automatically."
   }
 }
