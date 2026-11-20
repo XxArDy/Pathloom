@@ -432,6 +432,9 @@ pub struct ProjectConfig {
 pub struct TelegramConfig {
     /// Chat that receives approval requests and may answer them.
     pub chat_id: String,
+    /// Local time `HH:MM` to send the daily digest at; absent = no digest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest: Option<String>,
 }
 
 fn default_fetch_interval() -> u64 {

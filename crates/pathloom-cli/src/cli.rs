@@ -120,6 +120,19 @@ pub enum Cmd {
     },
     /// What waits for the owner: pending approvals, open decisions, open owner tasks
     Inbox,
+    /// Overdue, due today (or within 7 days with --week), blocked, and what waits for you
+    Today {
+        #[arg(long)]
+        week: bool,
+    },
+    /// What was done since a time, what is stuck, what waits (Markdown with --md)
+    Digest {
+        /// 24h, 7d, 90m or an RFC3339 UTC time (default 24h)
+        #[arg(long)]
+        since: Option<String>,
+        #[arg(long)]
+        md: bool,
+    },
     /// Bridge pending approvals to a Telegram chat (needs [telegram] in project.toml and PATHLOOM_TELEGRAM_TOKEN); runs until killed
     Telegram,
     /// Protocol version, capabilities, counts and agent profiles

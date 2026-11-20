@@ -1,6 +1,7 @@
 //! Pathloom core: project files, boards, stages, dependency graph and computed statuses.
 //! See `README.md` for the file-format notes.
 
+mod agenda;
 mod agents;
 mod apply;
 mod approvals;
@@ -55,6 +56,7 @@ pub use model::{
     AgentChanges, Board, Comment, Dep, GitConfig, Priority, ProjectConfig, Stage, TelegramConfig, StageKind, StageMeta, StageView, Status,
     Approval, ApprovalState, DecisionOption, InboxKind, Task, TaskDecision, TaskInfo, TaskKind, Who,
 };
+pub use agenda::{Agenda, AgendaItem, Digest, SilentClaim, Stuck, add_days, date_to_days, days_to_date, today_utc};
 pub use approvals::{ApprovalView, DecisionView, InboxItem};
 pub use project::Project;
 pub use stagefile::is_valid_key;

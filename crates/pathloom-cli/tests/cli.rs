@@ -554,3 +554,23 @@ fn status_commits_and_usage_quota() {
         assert_eq!(p.json(&["commits", "--stage", "B"])["commits"].as_array().unwrap().len(), 0);
     }
 }
+
+#[test]
+fn today_and_digest_json() {
+    let p = Proj::new();
+    let spec = "stages:\n  - {id: LATE, title: Late, tasks: [a], due: '2000-01-01'}\n  - {id: B, title: Beta, depends: [LATE], tasks: [b]}\n";
+    let f = p.dir.path().join("spec.yaml");
+    std::fs::write(&f, spec).unwrap();
+    assert!(p.run(&["apply", f.to_str().unwrap()]).status.success());
+    let v = p.json(&["today"]);
+    assert_eq!(v["days"], 1);
+    assert_eq!(v["overdue"][0]["key"], "LATE");
+    assert_eq!(v["blocked"][0]["key"], "B");
+    assert_eq!(p.json(&["today", "--week"])["days"], 7);
+    let d = p.json(&["digest", "--since", "24h"]);
+    assert_eq!(d["stuck"]["overdue"][0]["key"], "LATE");
+    assert!(d["done"].as_array().unwrap().is_empty());
+    let md = String::from_utf8(p.run(&["digest", "--md"]).stdout).unwrap();
+    assert!(md.starts_with("## Digest ") && md.contains("### Overdue"), "{md}");
+    assert!(!p.run(&["digest", "--since", "nope"]).status.success());
+}
