@@ -120,6 +120,8 @@ pub enum Cmd {
     },
     /// What waits for the owner: pending approvals, open decisions, open owner tasks
     Inbox,
+    /// Bridge pending approvals to a Telegram chat (needs [telegram] in project.toml and PATHLOOM_TELEGRAM_TOKEN); runs until killed
+    Telegram,
     /// Protocol version, capabilities, counts and agent profiles
     Info,
     /// Agent profiles: display name, color, avatar
