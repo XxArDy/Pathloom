@@ -31,7 +31,9 @@ interface AppStore {
   /** Drawing style: follow the theme's default, or force one. */
   renderStyle: 'theme' | 'clean' | 'sketch';
   error: string | null;
-  view: 'board' | 'list' | 'overview' | 'agenda';
+  view: 'board' | 'list' | 'overview' | 'agenda' | 'timeline';
+  /** Quick add, export, import and history dialogs (docs/m10 А2, А6, А7). */
+  peopleDialog: 'quickAdd' | 'export' | 'import' | 'history' | null;
   /** Template dialog inside an open project. */
   templateDialog: 'add' | 'save' | null;
   paletteOpen: boolean;
@@ -123,6 +125,7 @@ export const useApp = create<AppStore>((set, get) => ({
   error: null,
   view: 'board',
   templateDialog: null,
+  peopleDialog: null,
   paletteOpen: false,
   picker: null,
   snap: false,

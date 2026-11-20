@@ -53,6 +53,7 @@
   "inspector": {
     "who": "Assignee",
     "due": "Due",
+    "estimate": "Estimate (days)",
     "priority": "Priority",
     "branch": "Branch",
     "dependsOn": "Depends on",
@@ -146,7 +147,8 @@
     "board": "Board",
     "list": "List",
     "overview": "Overview",
-    "agenda": "Today / Week"
+    "agenda": "Today / Week",
+    "timeline": "Timeline"
   },
   "exec": {
     "on": "Focus",
@@ -185,6 +187,7 @@
     "app.openFolder": "Open folder",
     "app.settings": "Settings",
     "app.palette": "Command palette",
+    "app.quickAdd": "Quick add a task",
     "tool.sticky": "Sticky note",
     "tool.image": "Image",
     "tool.eraser": "Eraser",
@@ -436,6 +439,7 @@
     "week": "Week",
     "overdue": "Overdue",
     "due": "Due",
+    "estimate": "Estimate (days)",
     "blocked": "Blocked",
     "waiting": "Waiting for me",
     "empty": "Nothing here.",
@@ -456,6 +460,66 @@
     "sumOverdue": "overdue {{count}}",
     "sumBlocked": "blocked {{count}}",
     "sumWaiting": "waiting {{count}}"
+  },
+  "people": {
+    "quick": {
+      "button": "Quick add",
+      "title": "Quick add a task",
+      "placeholder": "e.g. add \"Write tests\" to stage AUTH by Friday",
+      "hint": "Plain words: a title (in quotes), a stage, a date (today, tomorrow, by Friday, 12.12).",
+      "fTitle": "Task",
+      "fStage": "Stage",
+      "fDue": "Stage due date (set only if the stage has none)",
+      "fWho": "For",
+      "whoNote": "The assignee is not stored on a task.",
+      "noStage": "Choose a stage",
+      "unmatched": "Not recognized: {{items}}",
+      "add": "Add",
+      "added": "Task added"
+    },
+    "timeline": {
+      "title": "Timeline",
+      "empty": "No stages to schedule.",
+      "today": "today",
+      "finish": "Project finish: {{date}}",
+      "days": "{{count}} d",
+      "slack": "{{count}} d to spare",
+      "late": "{{count}} d late",
+      "tipCritical": "Critical: each day of delay here moves the finish by 1 day.",
+      "tipFloat": "Can slip {{count}} days without moving the finish.",
+      "legend": "Critical path in accent colour"
+    },
+    "export": {
+      "menu": "Export…",
+      "title": "Export the plan",
+      "html": "Read-only page (HTML)",
+      "md": "Markdown",
+      "csv": "CSV",
+      "github": "GitHub issues (JSON)",
+      "saved": "Saved to {{path}}"
+    },
+    "import": {
+      "menu": "Import…",
+      "title": "Import a plan",
+      "choose": "Choose file…",
+      "format": "Format",
+      "md": "Markdown list",
+      "csv": "CSV",
+      "trello": "Trello (JSON)",
+      "notion": "Notion (CSV)",
+      "counts": "{{stages}} stages, {{tasks}} tasks",
+      "created": "New stages: {{list}}",
+      "updated": "Updated stages: {{list}}",
+      "apply": "Import",
+      "done": "Imported"
+    },
+    "history": {
+      "menu": "History…",
+      "title": "Change history",
+      "empty": "No changes recorded yet.",
+      "revert": "Revert",
+      "reverted": "Change reverted"
+    }
   },
   "tpl": {
     "new": "New from template",

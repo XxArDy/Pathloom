@@ -48,6 +48,11 @@ export function CommandPalette() {
             <Command.Item value="view list" onSelect={run(() => set({ view: 'list' }))}>{t('views.list')}</Command.Item>
             <Command.Item value="view overview" onSelect={run(() => set({ view: 'overview' }))}>{t('views.overview')}</Command.Item>
             <Command.Item value="view agenda today week" onSelect={run(() => set({ view: 'agenda' }))}>{t('views.agenda')}</Command.Item>
+            <Command.Item value="view timeline schedule critical path" onSelect={run(() => set({ view: 'timeline' }))}>{t('views.timeline')}</Command.Item>
+            <Command.Item value="quick add task" onSelect={run(() => set({ peopleDialog: 'quickAdd' }))}>{t('commands.app.quickAdd')}<span className="pal-meta">{label('app.quickAdd', keys)}</span></Command.Item>
+            <Command.Item value="export plan html markdown csv github" onSelect={run(() => set({ peopleDialog: 'export' }))}>{t('people.export.menu')}</Command.Item>
+            <Command.Item value="import plan markdown csv trello notion" onSelect={run(() => set({ peopleDialog: 'import' }))}>{t('people.import.menu')}</Command.Item>
+            <Command.Item value="history revert changes" onSelect={run(() => set({ peopleDialog: 'history' }))}>{t('people.history.menu')}</Command.Item>
             <Command.Item value="template add from" onSelect={run(() => set({ templateDialog: 'add' }))}>{t('tpl.add')}</Command.Item>
             <Command.Item value="template save plan as" onSelect={run(() => set({ templateDialog: 'save' }))}>{t('tpl.save')}</Command.Item>
             <Command.Item value="focus" onSelect={run(() => { const s = useApp.getState(); s.set({ exec: !s.exec, view: 'board' }); })}>{t('commands.app.focus')}<span className="pal-meta">{label('app.focus', keys)}</span></Command.Item>

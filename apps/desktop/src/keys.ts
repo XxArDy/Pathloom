@@ -7,7 +7,7 @@ import {
 } from '@pathloom/canvas';
 import { create } from 'zustand';
 
-export type AppCommand = 'app.focus' | 'app.toggleView' | 'app.openFolder' | 'app.settings' | 'app.palette';
+export type AppCommand = 'app.focus' | 'app.toggleView' | 'app.openFolder' | 'app.settings' | 'app.palette' | 'app.quickAdd';
 export type Command = CanvasCommand | AppCommand;
 export type FullKeymap = Record<Command, string[]>;
 
@@ -17,6 +17,7 @@ export const DEFAULT_APP_KEYMAP: Record<AppCommand, string[]> = {
   'app.openFolder': ['Mod+KeyO'],
   'app.settings': ['Mod+Comma'],
   'app.palette': ['Mod+KeyK'],
+  'app.quickAdd': ['Mod+KeyN'],
 };
 
 export const DEFAULT_KEYMAP: FullKeymap = { ...DEFAULT_CANVAS_KEYMAP, ...DEFAULT_APP_KEYMAP };
@@ -27,7 +28,7 @@ export const COMMAND_GROUPS: { id: string; commands: Command[] }[] = [
   { id: 'edit', commands: ['edit.undo', 'edit.redo', 'edit.delete', 'edit.duplicate', 'edit.copy', 'edit.paste', 'edit.selectAll', 'edit.convertToStage', 'arrange.front', 'arrange.back', 'edit.toggleLock', 'edit.group', 'edit.ungroup', 'edit.cancel'] },
   { id: 'arrange', commands: ['align.left', 'align.center', 'align.right', 'align.top', 'align.middle', 'align.bottom', 'distribute.h', 'distribute.v'] },
   { id: 'view', commands: ['view.zoomIn', 'view.zoomOut', 'view.fit', 'view.zoom100', 'view.toggleSnap', 'app.focus', 'app.toggleView'] },
-  { id: 'app', commands: ['app.palette', 'app.openFolder', 'app.settings'] },
+  { id: 'app', commands: ['app.palette', 'app.quickAdd', 'app.openFolder', 'app.settings'] },
 ];
 
 const STORAGE_KEY = 'pathloom.keymap';

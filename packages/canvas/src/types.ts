@@ -114,6 +114,8 @@ export interface StageView {
   /** `me`, `ai`, `both`, `ai:<name>` or `human:<name>`. */
   who: string;
   due: string | null;
+  /** Planned days (frontmatter `estimate`); absent = 1 in the timeline. */
+  estimate?: number | null;
   priority: 'low' | 'med' | 'high';
   branch: string | null;
   pr: string | null;

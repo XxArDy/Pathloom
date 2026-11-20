@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { IconX, IconMap, IconPlayerPlay, IconLock, IconLayoutBoard, IconListDetails, IconFocus2, IconChartDonut, IconSparkles, IconInbox, IconCalendarEvent } from '@tabler/icons-react';
+import { IconX, IconMap, IconPlayerPlay, IconLock, IconLayoutBoard, IconListDetails, IconFocus2, IconChartDonut, IconSparkles, IconInbox, IconCalendarEvent, IconTimeline, IconPlus } from '@tabler/icons-react';
 import { useApp } from '../store';
 import { Sidebar } from './Sidebar';
 import { CanvasView } from './CanvasView';
@@ -14,6 +14,8 @@ import { ActiveAgents, GitBadge, UsageMeter } from './LiveBits';
 import { OverviewView } from './OverviewView';
 import { AgendaView } from './AgendaView';
 import { TemplateDialog } from './TemplateDialog';
+import { TimelineView } from './TimelineView';
+import { PeopleDialogs } from './PeopleDialogs';
 import { startReminders } from '../reminders';
 import { CommandPalette } from './CommandPalette';
 import { startAgentSync } from '../agentSync';
@@ -69,6 +71,7 @@ function StatusBar() {
 export function Workspace() {
   const { t } = useTranslation();
   const { project, activeBoard, selectedStage, error, view, proposals, inbox, set } = useApp();
+  const keys = effectiveKeymap(useKeys((s) => s.overrides));
 
   const handlers = useMemo(() => ({
     'app.focus': () => { const s = useApp.getState(); s.set({ exec: !s.exec, view: 'board' }); },
@@ -76,6 +79,7 @@ export function Workspace() {
     'app.openFolder': () => { openProject().catch((e) => useApp.getState().set({ error: errorText(e) })); },
     'app.settings': () => useApp.getState().set({ settingsTab: 'general' }),
     'app.palette': () => useApp.getState().set({ paletteOpen: true }),
+    'app.quickAdd': () => useApp.getState().set({ peopleDialog: 'quickAdd' }),
   }), []);
   useAppShortcuts(handlers);
 
@@ -105,7 +109,9 @@ export function Workspace() {
             <button role="tab" aria-selected={view === 'list'} className={`btn sm ${view === 'list' ? 'on' : ''}`} onClick={() => set({ view: 'list' })}><IconListDetails size={14} />{t('views.list')}</button>
             <button role="tab" aria-selected={view === 'overview'} className={`btn sm ${view === 'overview' ? 'on' : ''}`} onClick={() => set({ view: 'overview' })}><IconChartDonut size={14} />{t('views.overview')}</button>
             <button role="tab" aria-selected={view === 'agenda'} className={`btn sm ${view === 'agenda' ? 'on' : ''}`} onClick={() => set({ view: 'agenda' })}><IconCalendarEvent size={14} />{t('views.agenda')}</button>
+            <button role="tab" aria-selected={view === 'timeline'} className={`btn sm ${view === 'timeline' ? 'on' : ''}`} onClick={() => set({ view: 'timeline' })}><IconTimeline size={14} />{t('views.timeline')}</button>
           </div>
+          <button className="btn sm" title={`${t('people.quick.title')} (${label('app.quickAdd', keys)})`} onClick={() => set({ peopleDialog: 'quickAdd' })}><IconPlus size={14} />{t('people.quick.button')}</button>
           {proposals.length > 0 && (
             <button className="btn sm pri" onClick={() => set({ proposalsOpen: true })}><IconSparkles size={14} />{t('proposals.button', { count: proposals.length })}</button>
           )}
@@ -118,6 +124,7 @@ export function Workspace() {
           {view === 'list' && <div className="overlay-page"><ListView /></div>}
           {view === 'overview' && <div className="overlay-page"><OverviewView /></div>}
           {view === 'agenda' && <div className="overlay-page"><AgendaView /></div>}
+          {view === 'timeline' && <div className="overlay-page"><TimelineView /></div>}
           <AgentBanner />
           {error && (
             <div className="toast" role="alert" onClick={() => set({ error: null })}>{error}</div>
@@ -130,6 +137,7 @@ export function Workspace() {
       <ProposalsDialog />
       <InboxDialog />
       <TemplateDialog />
+      <PeopleDialogs />
       <CommandPalette />
     </div>
   );

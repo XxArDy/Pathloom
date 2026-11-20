@@ -3,7 +3,10 @@
 //! (`завтра`, `до п'ятниці`, `by friday`, `12.12`, `2026-12-12`) and assignee (`мені`, `агенту`, `for me`, `for ai`).
 
 use crate::agenda::{date_to_days, days_to_date};
+use crate::apply::{ApplySpec, StageSpec};
+use crate::error::{Error, Result};
 use crate::model::Who;
+use crate::project::Project;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -247,6 +250,29 @@ fn title_from(toks: &[&str], used: &[bool]) -> String {
     words.join(" ").trim_matches(|c: char| ":,-;. ".contains(c)).to_string()
 }
 
+impl Project {
+    /// The `apply` spec that adds `draft` as a task. The due date goes to the stage only when it has none
+    /// (tasks have no due date); the second value is a note when it was not applied. Assignee is not stored.
+    pub fn quick_add_spec(&self, draft: &Draft) -> Result<(ApplySpec, Option<String>)> {
+        let bad = |m: &str| Error::InvalidSpec(m.to_string());
+        if draft.title.trim().is_empty() {
+            return Err(bad("no task title found"));
+        }
+        let key = draft.stage.clone().ok_or_else(|| bad("no stage recognized: say `to stage <name>`"))?;
+        let stage = self.load_stage(&key)?;
+        let mut st = StageSpec { id: Some(key.clone()), tasks: vec![draft.title.clone()], ..Default::default() };
+        let mut note = None;
+        if let Some(due) = &draft.due {
+            if stage.due.is_none() {
+                st.due = Some(due.clone());
+            } else {
+                note = Some(format!("stage {key} already has a due date; the new one was not applied"));
+            }
+        }
+        Ok((ApplySpec { stages: vec![st], ..Default::default() }, note))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -379,5 +405,21 @@ mod tests {
     #[test]
     fn bad_today_disables_dates() {
         assert_eq!(parse("x tomorrow", &st(), "nope").due, None);
+    }
+
+    #[test]
+    fn quick_add_spec_sets_due_only_when_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = Project::init(dir.path(), "t").unwrap();
+        let s = p.create_stage("Auth", None).unwrap();
+        let d = Draft { title: "x".into(), stage: Some(s.key.clone()), due: Some("2026-12-01".into()), ..Default::default() };
+        let (spec, note) = p.quick_add_spec(&d).unwrap();
+        assert_eq!(spec.stages[0].due.as_deref(), Some("2026-12-01"));
+        assert!(note.is_none());
+        p.apply(&spec, &crate::ApplyOptions { dry_run: false, author: "me".into() }).unwrap();
+        let (spec, note) = p.quick_add_spec(&Draft { due: Some("2027-01-01".into()), ..d.clone() }).unwrap();
+        assert!(spec.stages[0].due.is_none());
+        assert!(note.is_some());
+        assert!(p.quick_add_spec(&Draft { stage: None, ..d }).is_err());
     }
 }
