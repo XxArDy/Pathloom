@@ -9,7 +9,9 @@ mod error;
 mod evidence;
 mod import;
 pub mod events;
+pub mod commits;
 mod fsutil;
+pub mod gitsrc;
 mod hash;
 mod indexkey;
 mod keygen;
@@ -47,7 +49,7 @@ pub use evidence::Evidence;
 pub use import::ImportReport;
 pub use keygen::generate_key;
 pub use model::{
-    AgentChanges, Board, Comment, Dep, Priority, ProjectConfig, Stage, StageKind, StageMeta, StageView, Status,
+    AgentChanges, Board, Comment, Dep, GitConfig, Priority, ProjectConfig, Stage, StageKind, StageMeta, StageView, Status,
     Task, TaskInfo, Who,
 };
 pub use project::Project;

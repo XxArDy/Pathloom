@@ -31,6 +31,9 @@ pub enum Error {
     Claimed { task_id: String, by: String, expires_at: String },
     #[error("project already initialized at {}", .0.display())]
     AlreadyInitialized(PathBuf),
+    /// A `git` invocation failed (message = trimmed stderr, or why it could not start).
+    #[error("git: {0}")]
+    Git(String),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

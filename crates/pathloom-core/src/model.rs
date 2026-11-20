@@ -320,6 +320,23 @@ pub struct ProjectConfig {
     /// Agents (MCP) must attach passing evidence to mark tasks of `kind: stage` done.
     #[serde(default)]
     pub require_evidence: bool,
+    /// Optional git settings (`[git]` table); absent in old files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git: Option<GitConfig>,
+}
+
+fn default_fetch_interval() -> u64 {
+    120
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct GitConfig {
+    /// Ref the plan is read from instead of the working tree (e.g. `origin/main`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_ref: Option<String>,
+    #[serde(default = "default_fetch_interval")]
+    pub fetch_interval_secs: u64,
 }
 
 /// Partial update of a stage's frontmatter. `None` leaves a field unchanged;
@@ -340,6 +357,17 @@ pub struct StageMeta {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn config_git_optional_and_roundtrips() {
+        let old = "format = 1\nname = \"p\"\nplan_dir = \"plan\"\nagent_changes = \"auto\"\nrequire_evidence = false\n";
+        let c: ProjectConfig = toml::from_str(old).unwrap();
+        assert!(c.git.is_none());
+        assert_eq!(toml::to_string(&c).unwrap(), old);
+        let c: ProjectConfig = toml::from_str(&format!("{old}[git]\nread_ref = \"origin/main\"\n")).unwrap();
+        let g = c.git.unwrap();
+        assert_eq!((g.read_ref.as_deref(), g.fetch_interval_secs), (Some("origin/main"), 120));
+    }
 
     #[test]
     fn who_parse_and_helpers() {
