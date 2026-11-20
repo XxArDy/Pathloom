@@ -76,6 +76,11 @@ pub fn perform(p: &Project, item: &QueueItem) -> pathloom_core::Result<(Vec<Stri
             p.answer_decision(&item.task_id, &str_arg("choice").unwrap_or_default(), "me")?;
             Ok((stage_file(), None))
         }
+        "message" => {
+            let text = str_arg("text").unwrap_or_default();
+            p.add_comment(pathloom_core::stage_key_of(&item.task_id), "me", &format!("{}: {text}", item.task_id))?;
+            Ok((stage_file(), None))
+        }
         "proposal" => {
             let approve = item.args.get("approve").and_then(|v| v.as_bool()).unwrap_or(false);
             let d = p.decide_proposal(&item.task_id, approve, str_arg("comment").as_deref(), "me")?;
@@ -300,5 +305,17 @@ mod tests {
         bad.action = "nope".into();
         assert!(perform(&p, &bad).is_err());
         assert!(matches!(perform(&p, &item("A-01")), Err(Error::NotFound(_))));
+    }
+
+    #[test]
+    fn perform_message_adds_stage_comment() {
+        let d = tempfile::tempdir().unwrap();
+        let p = Project::init(d.path(), "t").unwrap();
+        p.apply(&Project::parse_spec("stages: [{id: A, title: A, tasks: [One]}]").unwrap(), &pathloom_core::ApplyOptions::default()).unwrap();
+        let msg = QueueItem { action: "message".into(), task_id: "A-01".into(), args: serde_json::json!({ "text": "use PKCE" }), at: "t".into() };
+        let (files, prop) = perform(&p, &msg).unwrap();
+        assert_eq!((files.len(), prop.is_none()), (1, true));
+        let c = p.load_stage("A").unwrap().comments.pop().unwrap();
+        assert_eq!((c.author.as_str(), c.text.as_str()), ("me", "A-01: use PKCE"));
     }
 }

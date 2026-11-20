@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ask } from '@tauri-apps/plugin-dialog';
-import { IconCheck, IconX, IconRefresh } from '@tabler/icons-react';
+import { IconCheck, IconX, IconRefresh, IconMicrophone, IconPlayerStopFilled, IconSend } from '@tabler/icons-react';
 import type { StageView } from '@pathloom/canvas';
 import { alreadyDecided, api, errorText, fileUrl, isImageFile } from '../api';
 import { refreshInbox } from '../agentSync';
 import { agentText, ago } from '../agents';
 import { useApp } from '../store';
 import i18n from '../i18n';
+import { appendText, useDictation } from '../voice';
 
 const REASONS = ['off-theme', 'duplicate', 'quality', 'scale', 'wrong-place'] as const;
 
@@ -63,6 +64,34 @@ function BeforeAfter({ before, after, onOpen }: { before: string; after: string;
   );
 }
 
+/** Text for the agent with a mic button: browser dictation when the WebView has it, else the OS dictation hint. */
+export function MessageField({ value, onChange, placeholder, rows = 2, onEnter }: {
+  value: string; onChange: (v: string) => void; placeholder: string; rows?: number; onEnter?: () => void;
+}) {
+  const { t } = useTranslation();
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const latest = useRef(value);
+  latest.current = value;
+  const voice = useDictation((text) => onChange(appendText(latest.current, text)));
+  const mic = () => { ref.current?.focus(); voice.toggle(); };
+  const mac = navigator.userAgent.includes('Mac');
+  return (
+    <div className="msg-field">
+      <div className="msg-row">
+        <textarea ref={ref} className="prop-comment" rows={rows} value={value} placeholder={placeholder} maxLength={2000}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => { if (onEnter && e.key === 'Enter' && (rows === 1 || e.ctrlKey || e.metaKey) && value.trim()) { e.preventDefault(); onEnter(); } }} />
+        <button type="button" className={`icon-btn mic ${voice.listening ? 'on' : ''}`} aria-pressed={voice.listening}
+          aria-label={voice.listening ? t('voice.stop') : t('voice.start')} title={voice.listening ? t('voice.stop') : t('voice.start')} onClick={mic}>
+          {voice.listening ? <IconPlayerStopFilled size={15} /> : <IconMicrophone size={16} />}
+        </button>
+      </div>
+      {voice.listening && <span className="muted small" role="status">{t('voice.listening')}</span>}
+      {voice.fallback && <span className="muted small" role="status">{t(mac ? 'voice.hintMac' : 'voice.hintWin')}</span>}
+    </div>
+  );
+}
+
 /** Approval of a task: state, image previews, Approve / Reject (reason chips + comment), optional re-check. */
 export function ApprovalBox({ stage, taskId }: { stage: StageView; taskId: string }) {
   const { t } = useTranslation();
@@ -86,7 +115,9 @@ export function ApprovalBox({ stage, taskId }: { stage: StageView; taskId: strin
     setChecking(true);
     try { setExit(await api.evidenceRecheck(taskId)); } catch (e) { set({ error: errorText(e) }); } finally { setChecking(false); }
   };
-  const reject = async () => { await run(api.approvalsDecide(taskId, false, reasons, comment.trim())); setRejecting(false); };
+  const reject = async () => { await run(api.approvalsDecide(taskId, false, reasons, comment.trim())); setRejecting(false); setComment(''); };
+  const approve = async () => { await run(api.approvalsDecide(taskId, true, [], comment.trim())); setComment(''); };
+  const send = async () => { await run(api.taskMessage(taskId, comment.trim())); setComment(''); };
 
   return (
     <div className="appr">
@@ -110,6 +141,7 @@ export function ApprovalBox({ stage, taskId }: { stage: StageView; taskId: strin
       )}
       {ap?.state === 'pending' && (
         <>
+          <MessageField value={comment} onChange={setComment} placeholder={t('approval.message')} onEnter={() => void send()} />
           {rejecting ? (
             <div className="appr-reject">
               <div className="appr-chips">
@@ -118,7 +150,6 @@ export function ApprovalBox({ stage, taskId }: { stage: StageView; taskId: strin
                     onClick={() => setReasons((x) => (x.includes(r) ? x.filter((y) => y !== r) : [...x, r]))}>{t(`approval.reasons.${r}`)}</button>
                 ))}
               </div>
-              <textarea className="prop-comment" rows={2} value={comment} placeholder={t('approval.comment')} maxLength={2000} onChange={(e) => setComment(e.target.value)} />
               <div className="prop-actions">
                 <button className="btn danger-solid" disabled={busy} onClick={() => void reject()}>{t('approval.confirmReject')}</button>
                 <button className="btn" onClick={() => setRejecting(false)}>{t('proposals.cancel')}</button>
@@ -126,8 +157,9 @@ export function ApprovalBox({ stage, taskId }: { stage: StageView; taskId: strin
             </div>
           ) : (
             <div className="prop-actions">
-              <button className="btn pri" disabled={busy} onClick={() => void run(api.approvalsDecide(taskId, true, []))}><IconCheck size={14} />{t('approval.approve')}</button>
+              <button className="btn pri" disabled={busy} onClick={() => void approve()}><IconCheck size={14} />{t('approval.approve')}</button>
               <button className="btn" disabled={busy} onClick={() => setRejecting(true)}><IconX size={14} />{t('approval.reject')}</button>
+              <button className="btn push" disabled={busy || !comment.trim()} title={t('approval.sendHint')} onClick={() => void send()}><IconSend size={14} />{t('approval.send')}</button>
             </div>
           )}
         </>
@@ -172,8 +204,7 @@ export function DecisionBox({ stage, taskId }: { stage: StageView; taskId: strin
         ))}
       </div>
       <div className="td-attach">
-        <input className="inline-edit" value={own} maxLength={2000} placeholder={t('decision.own')} onChange={(e) => setOwn(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && own.trim()) { answer(own.trim()); setOwn(''); } }} />
+        <MessageField value={own} onChange={setOwn} rows={1} placeholder={t('decision.own')} onEnter={() => { answer(own.trim()); setOwn(''); }} />
         <button className="btn" disabled={busy || !own.trim()} onClick={() => { answer(own.trim()); setOwn(''); }}>{t('decision.submit')}</button>
       </div>
     </div>

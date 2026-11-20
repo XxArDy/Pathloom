@@ -744,6 +744,19 @@ fn approvals_decide(app: AppHandle, state: State<'_, AppState>, task_id: String,
     })
 }
 
+/// The owner writes to the agent about a task without deciding: a stage comment `me: <ID>: <text>`.
+#[tauri::command]
+fn task_message(app: AppHandle, state: State<'_, AppState>, task_id: String, text: String) -> CmdResult<Vec<StageView>> {
+    with_project(&state, |p| {
+        if owner_action(&app, p, "message", &task_id, serde_json::json!({ "text": text }))?.is_none() {
+            return views(p);
+        }
+        let key = pathloom_core::stage_key_of(&task_id).to_string();
+        log_entry(p, "comment", &format!("message on {task_id}"), vec![key], vec![task_id.clone()], vec![]);
+        views(p)
+    })
+}
+
 /// The owner answers a decision with an option label or free text.
 #[tauri::command]
 fn decision_answer(app: AppHandle, state: State<'_, AppState>, task_id: String, choice: String) -> CmdResult<Vec<StageView>> {
@@ -914,6 +927,7 @@ pub fn run() {
             stage_unlink,
             approvals_decide,
             decision_answer,
+            task_message,
             inbox_list,
             evidence_recheck,
             agenda,

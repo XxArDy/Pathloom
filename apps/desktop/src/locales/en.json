@@ -384,7 +384,8 @@
       "approval": "To approve",
       "decision": "To decide",
       "owner": "My tasks"
-    }
+    },
+    "openTask": "Open on the board"
   },
   "approval": {
     "review": "on review",
@@ -412,7 +413,10 @@
       "scale": "Scale",
       "wrong-place": "Wrong place"
     },
-    "alreadyDecided": "Already decided by {{by}} at {{at}}"
+    "alreadyDecided": "Already decided by {{by}} at {{at}}",
+    "message": "Message to the agent: what is wrong, what to change… (Ctrl+Enter sends)",
+    "send": "Send",
+    "sendHint": "Send the message to the agent without approving or rejecting"
   },
   "decision": {
     "answered": "Answer",
@@ -551,5 +555,12 @@
     "copy": "Copy link to this card",
     "openTitle": "Open project from link",
     "confirmOpen": "A link asks to open a project you have not opened before:\n{{path}}\n\nOpen it?"
+  },
+  "voice": {
+    "start": "Dictate",
+    "stop": "Stop dictation",
+    "listening": "Listening…",
+    "hintWin": "Voice input is not available here. Press Win+H to dictate with Windows.",
+    "hintMac": "Voice input is not available here. Press Fn twice to dictate with macOS."
   }
 }

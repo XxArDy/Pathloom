@@ -62,6 +62,9 @@ The user reads the plan as a picture, left to right. Follow these rules whenever
   `rejected` with `reasons` and `comment` (also a comment on the stage): fix it and request again. Only the user approves or
   rejects; there is no tool for that. With `require_approval` on, `set_task done` (and `tasks_done` in `apply`) does not close
   a task either: the result is `{"state": "review"}` and your evidence is kept.
+- The user can write to you about a task from the app without deciding: a stage comment by `me` that starts with the task id
+  (`APPR-01: rename the file`); an approval can also carry a comment (`approved APPR-01: ...`). Read the stage comments
+  (`get_stage`) while a task waits in review, and follow them.
 - Decisions: `ask_decision {task_id, question, options: [{label, description?}], recommended?}` asks the user; the task stays
   open until they answer. Read the answer with `list_decisions {open?}` (`choice`) or `get_stage` (`taskInfo.<ID>.decision.choice`).
 - Optional `report_usage {tokens_in?, tokens_out?, cost_usd?, stage?, task_id?, model?, percent_weekly?, resets_at?, note?}`:

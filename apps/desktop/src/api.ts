@@ -119,6 +119,7 @@ export const api = {
   approvalsDecide: (taskId: string, approve: boolean, reasons: string[], comment?: string) =>
     invoke<StageView[]>('approvals_decide', { taskId, approve, reasons, comment: comment || null }),
   decisionAnswer: (taskId: string, choice: string) => invoke<StageView[]>('decision_answer', { taskId, choice }),
+  taskMessage: (taskId: string, text: string) => invoke<StageView[]>('task_message', { taskId, text }),
   inboxList: () => invoke<InboxItem[]>('inbox_list'),
   evidenceRecheck: (taskId: string) => invoke<number>('evidence_recheck', { taskId }),
   agenda: (today: string, days: number) => invoke<Agenda>('agenda', { today, days }),

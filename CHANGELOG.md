@@ -3,7 +3,7 @@
 All notable changes to Pathloom. Versions follow [Semantic Versioning](https://semver.org/); the file and MCP formats are versioned
 separately as `pathloom/1`.
 
-## Unreleased
+## 0.1.1 (beta) - 2026-11-20
 
 ### Added
 - Proposals with a diff: approve or reject each one; a proposal made on an older version of a stage is flagged as a conflict. `apply` with `propose: true` sends a single change for review.
@@ -19,6 +19,8 @@ separately as `pathloom/1`.
 - Export to Markdown, CSV, GitHub issues and read-only HTML (`pathloom export`); import from Markdown, CSV, Trello, Notion and Spec Kit (`pathloom import`).
 - Change history with revert of one change (`pathloom history`, `pathloom revert`).
 - For orchestrators: session state (`pathloom session set`, `update_session`), shared approval queue for clients (`respond_approval`, `answer_decision`, only with `allow_client_answers = true`), `approval`, `decision` and `task` events, `pathloom watch --json --stage --type`, `pathloom://open?...` deep links (`pathloom deeplink`, `make_link`).
+
+- Message to the agent in **Waiting for me**: approvals and decisions unfold in place; write what is wrong and send it without deciding (a stage comment `<ID>: text`), or attach it to Approve / Reject. A mic button dictates the text (falls back to a Win+H / Fn Fn hint where the WebView has no speech recognizer).
 
 ### Changed
 - A second answer to an already decided approval or decision now fails with `ALREADY_DECIDED` (details: who, when, and the state or choice) instead of overwriting the first answer. The first answer wins, in the app, CLI, MCP and Telegram.

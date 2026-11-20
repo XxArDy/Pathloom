@@ -105,8 +105,10 @@ fn request_reject_request_approve() {
     let s = p.request_approval("APPR-01", &[], None, "claude").unwrap();
     let a = s.task_info["APPR-01"].approval.as_ref().unwrap();
     assert!(a.state == ApprovalState::Pending && a.reasons.is_empty() && a.comment.is_empty());
+    let comments = s.comments.len();
     let s = p.decide_approval("APPR-01", true, &[], None, "me").unwrap();
     assert!(s.tasks[0].done);
+    assert_eq!(s.comments.len(), comments, "a plain approval adds no stage comment");
     assert_eq!(s.task_info["APPR-01"].approval.as_ref().unwrap().state, ApprovalState::Approved);
     assert!(p.inbox().unwrap().iter().all(|i| i.kind != InboxKind::Approval));
     assert!(p.decide_approval("APPR-01", false, &["x".repeat(41)], None, "me").is_err());
@@ -209,4 +211,14 @@ fn set_git_config_roundtrip() {
     assert_eq!((g.read_ref.as_deref(), g.fetch_interval_secs), (Some("origin/main"), 10));
     p.set_git_config("", 120).unwrap();
     assert!(Project::open(d.path()).unwrap().config.git.is_none());
+}
+
+#[test]
+fn approval_with_comment_reaches_the_agent() {
+    let (_d, p) = setup(PLAN);
+    p.request_approval("APPR-01", &[], None, "claude").unwrap();
+    let s = p.decide_approval("APPR-01", true, &[], Some("Good, but\nrename the file"), "me").unwrap();
+    assert_eq!(s.task_info["APPR-01"].approval.as_ref().unwrap().comment, "Good, but\nrename the file", "the approval keeps line breaks");
+    let c = s.comments.last().unwrap();
+    assert_eq!((c.author.as_str(), c.text.as_str()), ("me", "approved APPR-01: Good, but rename the file"));
 }

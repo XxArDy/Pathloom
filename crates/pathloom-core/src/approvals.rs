@@ -134,7 +134,8 @@ impl Project {
 
     /// The owner decides (first answer wins: a task whose approval is not pending fails with
     /// [`Error::AlreadyDecided`]): approve ticks the task; reject un-ticks it, stores `reasons` and `comment`
-    /// and adds `<by>: rejected <ID> [reasons]: <comment>` to the stage comments.
+    /// and adds `<by>: rejected <ID> [reasons]: <comment>` to the stage comments. An approval with a comment
+    /// adds `approved <ID>: <comment>`, so the agent reads the note in the stage comments either way.
     pub fn decide_approval(&self, task_id: &str, approve: bool, reasons: &[String], comment: Option<&str>, by: &str) -> Result<Stage> {
         self.decide_approval_with(task_id, approve, reasons, comment, by, false)
     }
@@ -195,14 +196,15 @@ impl Project {
                 st.step = crate::taskstatus::TaskStep::Accepted;
             }
             mark_done(s, task_id, approve)?;
-            if !approve {
-                let why = if reasons.is_empty() { String::new() } else { format!(" [{}]", reasons.join(", ")) };
-                let tail = if comment.is_empty() { String::new() } else { format!(": {comment}") };
-                s.comments.push(Comment {
-                    at: now_minute(),
-                    author: by.into(),
-                    text: format!("rejected {task_id}{why}{tail}").replace('\n', " "),
-                });
+            let why = if reasons.is_empty() { String::new() } else { format!(" [{}]", reasons.join(", ")) };
+            let tail = if comment.is_empty() { String::new() } else { format!(": {comment}") };
+            let note = match approve {
+                false => Some(format!("rejected {task_id}{why}{tail}")),
+                true if !comment.is_empty() => Some(format!("approved {task_id}{tail}")),
+                true => None,
+            };
+            if let Some(text) = note {
+                s.comments.push(Comment { at: now_minute(), author: by.into(), text: text.replace('\n', " ") });
             }
             Ok(())
         })?;
