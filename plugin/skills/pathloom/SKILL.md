@@ -61,6 +61,9 @@ frames:
    - Optional: `report_usage {tokens_in, tokens_out, cost_usd?, stage?}` so the user sees spending per stage and agent.
    - Need the user to look at work (a screenshot, a design)? `request_approval {task_id, files?, note?}`: the task waits in review. Read `get_approvals`: a `rejected` entry has `reasons` and `comment` (also on the stage); fix and request again. Only the user approves. With `require_approval` on, `set_task done` returns `{"state": "review"}` instead of closing the task.
    - Need a choice from the user? `ask_decision {task_id, question, options: [{label, description?}], recommended?}`, then read the answer in `list_decisions` (`choice`) or `get_stage`. Do not guess while it is open.
+   - Optional: `report_usage {tokens_in?, tokens_out?, cost_usd?, stage?, task_id?, model?, percent_weekly?, resets_at?}` so the user sees spending per stage, model and agent, and your weekly limit (`percent_weekly` 0-100).
+   - Delegated work: `claim_task {task_id, by?, parent?, branch?, worktree?}` (who really works, who delegated, where). Report delivery with `set_task_status {task_id, status: claimed|pushed|merged|verified|accepted, branch?, sha?, evidence?}` (sha 7-40 hex, evidence = up to 10 paths/links); it also counts as a heartbeat. A claim without heartbeat for 30 min shows as stale.
+   - `evidence.commit` (sha) ties a check to its commit. `list_commits {stage?, limit?}` / `pathloom commits` lists commits whose subject starts with a stage or task id (`AUTH-02: ...`).
    - Leave short notes with `add_comment` — the user reads them on the card.
    - `activity` shows what other agents and the user did recently. Read it when you start a session.
 4. Keep `branch` on a stage in sync with the git branch you work on (`apply` with `branch: feat/x`).

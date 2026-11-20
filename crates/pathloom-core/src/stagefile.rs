@@ -120,7 +120,11 @@ impl Stage {
         if let Some(Value::Object(o)) = map.get("task_info") {
             let parsed: Result<std::collections::BTreeMap<String, TaskInfo>, String> = o
                 .iter()
-                .map(|(k, v)| serde_json::from_value::<TaskInfo>(v.clone()).map(|i| (k.clone(), i)).map_err(|e| e.to_string()))
+                .map(|(k, v)| {
+                    let mut i = serde_json::from_value::<TaskInfo>(v.clone()).map_err(|e| e.to_string())?;
+                    i.status = i.status.map(|s| s.normalize()).transpose().map_err(|e| e.to_string())?;
+                    Ok((k.clone(), i))
+                })
                 .collect();
             match parsed {
                 Ok(m) => st.task_info = m,

@@ -21,6 +21,25 @@ pub struct Usage {
     /// US dollars.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cost_usd: Option<f64>,
+    /// Model that did the work, e.g. `opus`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Share of the weekly limit used so far, 0..=100.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub percent_weekly: Option<f64>,
+    /// When the weekly limit resets (RFC3339).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resets_at: Option<String>,
+}
+
+/// Latest reported weekly limit of one agent.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Quota {
+    pub percent_weekly: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resets_at: Option<String>,
+    /// When it was reported.
+    pub at: String,
 }
 
 /// Usage totals per agent and per stage (from the whole log).
@@ -29,6 +48,12 @@ pub struct UsageSummary {
     pub total: Usage,
     pub by_agent: std::collections::BTreeMap<String, Usage>,
     pub by_stage: std::collections::BTreeMap<String, Usage>,
+    /// stage -> model (`?` when unnamed) -> usage.
+    #[serde(default)]
+    pub by_stage_model: std::collections::BTreeMap<String, std::collections::BTreeMap<String, Usage>>,
+    /// agent -> latest weekly limit it reported.
+    #[serde(default)]
+    pub quota: std::collections::BTreeMap<String, Quota>,
 }
 
 impl Usage {
@@ -40,10 +65,20 @@ impl Usage {
         }
     }
 
-    /// Reject negative or non-finite cost.
+    /// Reject negative or non-finite cost, a percent outside 0..=100, a bad `model` or `resets_at`.
     pub fn validate(&self) -> Result<()> {
+        let bad = |m: &str| Err(crate::error::Error::InvalidSpec(m.into()));
         if self.cost_usd.is_some_and(|c| !c.is_finite() || c < 0.0) {
-            return Err(crate::error::Error::InvalidSpec("cost_usd must be a non-negative number".into()));
+            return bad("cost_usd must be a non-negative number");
+        }
+        if self.percent_weekly.is_some_and(|p| !(0.0..=100.0).contains(&p)) {
+            return bad("percent_weekly must be a number from 0 to 100");
+        }
+        if self.model.as_ref().is_some_and(|m| m.trim().is_empty() || m.chars().count() > 64 || m.chars().any(char::is_control)) {
+            return bad("model must be 1-64 characters");
+        }
+        if self.resets_at.as_ref().is_some_and(|r| r.len() > 40 || r.chars().any(|c| c.is_whitespace() || c.is_control())) {
+            return bad("resets_at must be an RFC3339 time like 2026-11-27T00:00:00Z");
         }
         Ok(())
     }
@@ -99,8 +134,16 @@ impl Project {
     /// touches several stages is split evenly between them.
     pub fn usage_summary(&self) -> Result<UsageSummary> {
         let mut out = UsageSummary::default();
+        // Newest first: the first quota seen for an agent is its latest.
         for e in self.read_log(0, None)? {
             let Some(u) = &e.usage else { continue };
+            if let Some(p) = u.percent_weekly {
+                out.quota.entry(e.author.clone()).or_insert_with(|| Quota {
+                    percent_weekly: p,
+                    resets_at: u.resets_at.clone(),
+                    at: e.at.clone(),
+                });
+            }
             out.total.add(u);
             out.by_agent.entry(e.author.clone()).or_default().add(u);
             let n = e.stages.len().max(1) as u64;
@@ -109,8 +152,11 @@ impl Project {
                     tokens_in: u.tokens_in / n,
                     tokens_out: u.tokens_out / n,
                     cost_usd: u.cost_usd.map(|c| c / n as f64),
+                    ..Default::default()
                 };
                 out.by_stage.entry(k.clone()).or_default().add(&part);
+                let model = u.model.clone().unwrap_or_else(|| "?".into());
+                out.by_stage_model.entry(k.clone()).or_default().entry(model).or_default().add(&part);
             }
         }
         Ok(out)

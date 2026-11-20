@@ -406,6 +406,7 @@ async fn gate_run(state: State<'_, AppState>, key: String) -> CmdResult<Vec<Stag
         duration_ms: Some(ms),
         summary: None,
         log: None,
+        commit: None,
         at: String::new(),
         by: "me".into(),
     };

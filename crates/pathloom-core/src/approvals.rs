@@ -160,7 +160,9 @@ impl Project {
                 a.reasons = reasons.clone();
             }
             info.approval = Some(a);
-            // TODO(m9 §4): set `status.step = accepted` on approve once task_info.status exists.
+            if approve && let Some(st) = info.status.as_mut() {
+                st.step = crate::taskstatus::TaskStep::Accepted;
+            }
             mark_done(s, task_id, approve)?;
             if !approve {
                 let why = if reasons.is_empty() { String::new() } else { format!(" [{}]", reasons.join(", ")) };

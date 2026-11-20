@@ -17,6 +17,7 @@ fn ev(cmd: &str, code: i32) -> Evidence {
         duration_ms: Some(1200),
         summary: Some("94 passed".into()),
         log: None,
+        commit: None,
         at: String::new(),
         by: "claude".into(),
     }
@@ -122,7 +123,7 @@ fn usage_is_summed_per_agent_and_stage() {
             author: author.into(),
             action: "usage".into(),
             stages: stages.iter().map(|s| s.to_string()).collect(),
-            usage: Some(pathloom_core::Usage { tokens_in: tin, tokens_out: 10, cost_usd: cost }),
+            usage: Some(pathloom_core::Usage { tokens_in: tin, tokens_out: 10, cost_usd: cost, ..Default::default() }),
             ..Default::default()
         })
         .unwrap();

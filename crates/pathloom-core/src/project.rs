@@ -451,6 +451,32 @@ impl Project {
         })
     }
 
+    /// Set the delivery status of a task (`task_info.<ID>.status`). `sha` is 7-40 hex, `evidence` up to 10
+    /// paths/links (same rules as task files); `at` is now.
+    pub fn set_task_status(
+        &self,
+        task_id: &str,
+        step: crate::TaskStep,
+        branch: Option<&str>,
+        sha: Option<&str>,
+        evidence: &[String],
+        by: &str,
+    ) -> Result<Stage> {
+        let st = crate::TaskStatus {
+            step,
+            branch: branch.map(String::from),
+            sha: sha.map(String::from),
+            evidence: evidence.to_vec(),
+            at: crate::fsutil::now_rfc3339(),
+            by: by.into(),
+        }
+        .normalize()?;
+        self.edit_task_info(task_id, |i| {
+            i.status = Some(st);
+            Ok(())
+        })
+    }
+
     pub fn remove_task_file(&self, task_id: &str, file: &str) -> Result<Stage> {
         self.edit_task_info(task_id, |i| {
             i.files.retain(|x| x != file);

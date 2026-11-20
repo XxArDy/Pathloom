@@ -61,8 +61,38 @@ struct ClaimParams {
     ttl_minutes: Option<u64>,
     /// Short note about what you are doing
     note: Option<String>,
+    /// Who really does the work (model or agent name), up to 64 characters
+    by: Option<String>,
+    /// Id of the agent that delegated this task to you
+    parent: Option<String>,
+    /// Git branch of the work
+    branch: Option<String>,
+    /// Worktree folder of the work
+    worktree: Option<String>,
     /// External client session you act from (client, id, url?, title?). Logged with the action.
     session: Option<SessionRef>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct TaskStatusParams {
+    /// Task or subtask id
+    task_id: String,
+    /// claimed | pushed | merged | verified | accepted
+    status: String,
+    branch: Option<String>,
+    /// Commit, 7-40 hex characters
+    sha: Option<String>,
+    /// Up to 10 project-relative paths or links (screenshots, logs)
+    evidence: Option<Vec<String>>,
+    session: Option<SessionRef>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct CommitsParams {
+    /// Only commits of this stage key
+    stage: Option<String>,
+    /// Max commits to scan (default 50, max 500)
+    limit: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -205,12 +235,21 @@ struct GateParams {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct UsageParams {
-    tokens_in: u64,
-    tokens_out: u64,
+    /// Default 0 (e.g. when you only report the weekly limit)
+    tokens_in: Option<u64>,
+    tokens_out: Option<u64>,
     /// US dollars, if known
     cost_usd: Option<f64>,
     /// Stage the work was for
     stage: Option<String>,
+    /// Task the work was for (its stage is added too)
+    task_id: Option<String>,
+    /// Model that did the work, e.g. opus
+    model: Option<String>,
+    /// Share of your weekly limit used so far, 0-100
+    percent_weekly: Option<f64>,
+    /// When the weekly limit resets (RFC3339)
+    resets_at: Option<String>,
     /// Short note, e.g. "planning session"
     note: Option<String>,
     session: Option<SessionRef>,
@@ -387,8 +426,29 @@ impl PathloomServer {
         finish((|| {
             self.guard()?;
             let secs = a.ttl_minutes.unwrap_or(0).saturating_mul(60);
-            ops::claim_task(&self.project()?, &self.actor(&ctx, a.session)?, &a.task_id, secs, a.note.as_deref().unwrap_or(""))
+            let d = pathloom_core::Delegation { by: a.by, parent: a.parent, branch: a.branch, worktree: a.worktree };
+            ops::claim_task(&self.project()?, &self.actor(&ctx, a.session)?, &a.task_id, secs, a.note.as_deref().unwrap_or(""), &d)
         })())
+    }
+
+    #[tool(
+        description = "Report where a task is in delivery: claimed, pushed, merged, verified or accepted, with branch, commit sha (7-40 hex) and evidence files (screenshots). The user sees the pipeline on the task card. Also counts as a heartbeat.",
+        annotations(idempotent_hint = true)
+    )]
+    async fn set_task_status(&self, Parameters(a): Parameters<TaskStatusParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
+        finish((|| {
+            self.guard()?;
+            let ev = a.evidence.unwrap_or_default();
+            ops::set_task_status(&self.project()?, &self.actor(&ctx, a.session)?, &a.task_id, &a.status, a.branch.as_deref(), a.sha.as_deref(), &ev)
+        })())
+    }
+
+    #[tool(
+        description = "Git commits whose subject starts with a stage or task id (`AUTH-02: message`, `AUTH-02, 03: ...`, `AUTH: ...`), newest first. Empty without git.",
+        annotations(read_only_hint = true)
+    )]
+    async fn list_commits(&self, Parameters(a): Parameters<CommitsParams>) -> CallToolResult {
+        finish(self.project().and_then(|p| ops::commits(&p, a.stage.as_deref(), a.limit)))
     }
 
     #[tool(description = "Release your claim on a task without finishing it. force=true takes over another agent's claim: only when the user asks.")]
@@ -543,13 +603,20 @@ impl PathloomServer {
     }
 
     #[tool(
-        description = "Optional: report tokens/cost of your work (for a stage) so the user sees spending per stage and agent. Pathloom only stores what you report."
+        description = "Optional: report tokens/cost of your work (for a stage or task_id, with the model) so the user sees spending per stage and model; percent_weekly (0-100) + resets_at report your weekly limit. Pathloom only stores what you report."
     )]
     async fn report_usage(&self, Parameters(a): Parameters<UsageParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
         finish((|| {
             self.guard()?;
-            let u = pathloom_core::Usage { tokens_in: a.tokens_in, tokens_out: a.tokens_out, cost_usd: a.cost_usd };
-            ops::report_usage(&self.project()?, &self.actor(&ctx, a.session)?, u, a.stage.as_deref(), a.note.as_deref().unwrap_or(""))
+            let u = pathloom_core::Usage {
+                tokens_in: a.tokens_in.unwrap_or(0),
+                tokens_out: a.tokens_out.unwrap_or(0),
+                cost_usd: a.cost_usd,
+                model: a.model,
+                percent_weekly: a.percent_weekly,
+                resets_at: a.resets_at,
+            };
+            ops::report_usage(&self.project()?, &self.actor(&ctx, a.session)?, u, a.stage.as_deref(), a.task_id.as_deref(), a.note.as_deref().unwrap_or(""))
         })())
     }
 

@@ -23,7 +23,7 @@ fn capabilities_read_only_vs_full() {
     assert_eq!(PROTOCOL, "pathloom/1");
     let full = capabilities(false);
     let ro = capabilities(true);
-    assert_eq!(ro, ["read", "activity", "events", "validate"]);
+    assert_eq!(ro, ["read", "activity", "events", "validate", "commits"]);
     for c in ["read", "apply", "proposals", "claims", "activity", "agents", "events", "sessions", "layout", "validate"] {
         assert!(full.contains(&c), "{c}");
     }

@@ -115,7 +115,7 @@ fn request_reject_request_approve() {
 #[test]
 fn review_keeps_evidence_and_stage_active() {
     let (_d, p) = setup(PLAN);
-    let ev = Evidence { command: "cargo test".into(), exit_code: 0, duration_ms: None, summary: None, log: None, at: String::new(), by: String::new() };
+    let ev = Evidence { command: "cargo test".into(), exit_code: 0, duration_ms: None, summary: None, log: None, at: String::new(), by: String::new(), commit: None };
     let s = p.submit_for_review("DEV-01", Some(ev), "claude").unwrap();
     assert!(s.in_review("DEV-01") && !s.tasks[0].done);
     assert!(s.evidence.contains_key("DEV-01"));

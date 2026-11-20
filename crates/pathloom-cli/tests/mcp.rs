@@ -278,7 +278,12 @@ fn project_info_protocol_capabilities_and_read_only() {
     let mut ro = Client::start(d.path(), &["--read-only"]);
     ro.handshake();
     let (_, v) = ro.call("project_info", json!({}));
-    assert_eq!(v["capabilities"], json!(["read", "activity", "events", "validate"]));
+    assert_eq!(v["capabilities"], json!(["read", "activity", "events", "validate", "commits"]));
+    let (err, v) = ro.call("list_commits", json!({}));
+    assert!(!err, "{v}");
+    assert!(v["commits"].is_array());
+    let (err, v) = ro.call("set_task_status", json!({"task_id": "A-01", "status": "pushed"}));
+    assert!(err && v["code"] == "READ_ONLY");
     let (err, v) = ro.call("register_agent", json!({"name": "X"}));
     assert!(err);
     assert_eq!(v["code"], "READ_ONLY");
@@ -438,4 +443,45 @@ fn require_approval_review_and_approval_tools() {
     r.handshake();
     assert_eq!(r.call("request_approval", json!({"task_id": "DEV-01"})).1["code"], "READ_ONLY");
     assert!(!r.call("get_approvals", json!({})).0);
+}
+
+#[test]
+fn delegation_status_and_usage_tools() {
+    let d = project();
+    let mut c = Client::start(d.path(), &[]);
+    c.handshake_as("worker");
+    c.call("apply", json!({"spec": "stages: [{id: A, title: Alpha, tasks: [one]}]"}));
+    let (err, v) = c.call("claim_task", json!({"task_id": "A-01", "by": "opus", "parent": "lead", "branch": "feat/x"}));
+    assert!(!err, "{v}");
+    assert_eq!((v["by"].as_str(), v["parent"].as_str(), v["branch"].as_str()), (Some("opus"), Some("lead"), Some("feat/x")));
+    let (_, v) = c.call("get_stage", json!({"key": "A"}));
+    assert_eq!(v["claims"][0]["by"], "opus");
+    let (err, v) = c.call(
+        "set_task_status",
+        json!({"task_id": "A-01", "status": "pushed", "branch": "feat/x", "sha": "3f2a9c1", "evidence": ["shots/x.png"]}),
+    );
+    assert!(!err, "{v}");
+    assert_eq!(v["status"]["step"], "pushed");
+    let (_, v) = c.call("get_stage", json!({"key": "A"}));
+    assert_eq!(v["taskInfo"]["A-01"]["status"]["sha"], "3f2a9c1");
+    let (err, v) = c.call("set_task_status", json!({"task_id": "A-01", "status": "pushed", "sha": "nothex1"}));
+    assert!(err && v["code"] == "INVALID_SPEC");
+    let (err, _) = c.call("set_task_status", json!({"task_id": "A-01", "status": "flying"}));
+    assert!(err);
+    let (err, _) = c.call("set_task", json!({"task_id": "A-01", "done": true, "evidence": {"command": "x", "exit_code": 0, "commit": "zz"}}));
+    assert!(err);
+    let (err, v) = c.call("set_task", json!({"task_id": "A-01", "done": true, "evidence": {"command": "x", "exit_code": 0, "commit": "3F2A9C1"}}));
+    assert!(!err, "{v}");
+    let (_, v) = c.call("get_stage", json!({"key": "A"}));
+    assert_eq!(v["evidence"]["A-01"]["commit"], "3f2a9c1");
+    let (err, v) = c.call("report_usage", json!({"tokens_in": 10, "tokens_out": 5, "task_id": "A-01", "model": "opus"}));
+    assert!(!err, "{v}");
+    let (_, v) = c.call("activity", json!({"limit": 1}));
+    assert_eq!((v["entries"][0]["tasks"][0].as_str(), v["entries"][0]["stages"][0].as_str()), (Some("A-01"), Some("A")));
+    let (err, _) = c.call("report_usage", json!({"percent_weekly": 42.5, "resets_at": "2026-11-27T00:00:00Z"}));
+    assert!(!err);
+    let (err, _) = c.call("report_usage", json!({"percent_weekly": 101}));
+    assert!(err);
+    let (err, _) = c.call("report_usage", json!({"task_id": "A-99"}));
+    assert!(err);
 }

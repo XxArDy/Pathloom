@@ -21,6 +21,9 @@ pub struct Evidence {
     /// Link (`https://...`) or project-relative path to the full log, without spaces.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub log: Option<String>,
+    /// Commit the check ran on (7-40 hex).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
     /// When it was attached (RFC3339 UTC). Set by Pathloom.
     #[serde(default)]
     pub at: String,
@@ -47,6 +50,7 @@ impl Evidence {
             duration_ms: self.duration_ms,
             summary: opt(self.summary),
             log: opt(self.log),
+            commit: opt(self.commit).map(|c| crate::taskstatus::check_sha(&c)).transpose()?,
             at: self.at.trim().to_string(),
             by: self.by.trim().to_string(),
         };
@@ -76,7 +80,7 @@ mod tests {
     use super::*;
 
     fn ev(cmd: &str, code: i32) -> Evidence {
-        Evidence { command: cmd.into(), exit_code: code, duration_ms: None, summary: None, log: None, at: String::new(), by: String::new() }
+        Evidence { command: cmd.into(), exit_code: code, duration_ms: None, summary: None, log: None, commit: None, at: String::new(), by: String::new() }
     }
 
     #[test]
@@ -87,6 +91,9 @@ mod tests {
         assert!(ev(" ", 0).normalize().is_err());
         assert!(ev(&"x".repeat(501), 0).normalize().is_err());
         assert!(Evidence { log: Some("javascript:alert(1)".into()), ..ev("x", 0) }.normalize().is_err());
+        assert!(Evidence { commit: Some("zz".into()), ..ev("x", 0) }.normalize().is_err());
+        let c = Evidence { commit: Some(" ABCDEF1 ".into()), ..ev("x", 0) }.normalize().unwrap();
+        assert_eq!(c.commit.as_deref(), Some("abcdef1"));
         assert!(Evidence { summary: Some("y".repeat(121)), ..ev("x", 0) }.normalize().is_err());
     }
 }

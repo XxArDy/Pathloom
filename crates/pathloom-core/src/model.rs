@@ -242,6 +242,9 @@ pub struct TaskInfo {
     /// A question to the owner with options and, once answered, the choice.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decision: Option<TaskDecision>,
+    /// Delivery status (`set_task_status`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<crate::taskstatus::TaskStatus>,
 }
 
 impl TaskInfo {
@@ -251,6 +254,7 @@ impl TaskInfo {
             && self.kind.is_none()
             && self.approval.is_none()
             && self.decision.is_none()
+            && self.status.is_none()
     }
 }
 
