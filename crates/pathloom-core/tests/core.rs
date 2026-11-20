@@ -129,7 +129,7 @@ fn init_open_find() {
     let (d, p) = project();
     assert_eq!(p.config.plan_dir, "plan");
     let gi = std::fs::read_to_string(d.path().join(".pathloom/.gitignore")).unwrap();
-    assert_eq!(gi, "cache/\nproposals/\nlog/\nclaims.json\nclaims.lock\nplan.lock\n");
+    assert_eq!(gi, "cache/\nproposals/\nlog/\nclaims.json\nclaims.lock\nplan.lock\nhistory/\n");
     assert!(p.plan_dir().join("stages").is_dir());
     let b = p.load_board("roadmap").unwrap();
     assert_eq!((b.title.as_str(), b.style.as_str(), b.elements.len()), ("Roadmap", "clean", 0));

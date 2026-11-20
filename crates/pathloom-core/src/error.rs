@@ -34,6 +34,9 @@ pub enum Error {
     OutsideProject(String),
     #[error("project already initialized at {}", .0.display())]
     AlreadyInitialized(PathBuf),
+    /// `revert`: these files changed after the history entry was recorded.
+    #[error("cannot revert {id}: changed since: {}", paths.join(", "))]
+    HistoryConflict { id: String, paths: Vec<String> },
     /// A `git` invocation failed (message = trimmed stderr, or why it could not start).
     #[error("git: {0}")]
     Git(String),

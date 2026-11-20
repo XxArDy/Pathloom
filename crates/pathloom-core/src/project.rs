@@ -120,12 +120,13 @@ impl Project {
         };
         let text = toml::to_string(&config).map_err(|e| parse_err(&cfg_path, e))?;
         write_atomic(&cfg_path, text.as_bytes())?;
-        write_atomic(&root.join(".pathloom/.gitignore"), b"cache/\nproposals/\nlog/\nclaims.json\nclaims.lock\nplan.lock\n")?;
+        write_atomic(&root.join(".pathloom/.gitignore"), b"cache/\nproposals/\nlog/\nclaims.json\nclaims.lock\nplan.lock\nhistory/\n")?;
         let p = Project { root: root.to_path_buf(), config };
         std::fs::create_dir_all(p.plan_dir().join("stages"))?;
         if !p.board_path("roadmap").exists() {
             p.save_board("roadmap", &Board::new("Roadmap"))?;
         }
+        p.history_prime()?;
         Ok(p)
     }
 

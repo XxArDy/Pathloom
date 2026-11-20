@@ -210,7 +210,20 @@ pub enum Cmd {
         /// Write directly even when the project is in review mode
         #[arg(long)]
         direct: bool,
+        /// Store a proposal for human approval (whatever the project mode is)
+        #[arg(long, conflicts_with = "direct")]
+        propose: bool,
     },
+    /// Export the plan as Markdown, CSV or GitHub-issues JSON (stdout, or -o FILE)
+    #[command(subcommand)]
+    Export(ExportCmd),
+    /// Change history: what each logged action changed in the plan files
+    History {
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
+    /// Undo one history entry (only when its files were not changed since)
+    Revert { id: String },
     /// Run the MCP server on stdio
     Mcp {
         /// Expose read-only tools only
@@ -418,6 +431,44 @@ pub enum GateCmd {
 pub enum ImportFormat {
     /// GitHub Spec Kit tasks.md
     SpecKit,
+    /// Markdown headings (stages) and `- [ ]` lists (tasks)
+    Md,
+    /// CSV: Pathloom's export, a `title` column, or a Notion export
+    Csv,
+    /// Trello board JSON export
+    Trello,
+    /// Notion CSV export
+    Notion,
+}
+
+impl ImportFormat {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::SpecKit => "spec-kit",
+            Self::Md => "md",
+            Self::Csv => "csv",
+            Self::Trello => "trello",
+            Self::Notion => "notion",
+        }
+    }
+}
+
+/// Shared by every `export` format.
+#[derive(clap::Args, Debug)]
+pub struct ExportOut {
+    /// Write to this file instead of stdout
+    #[arg(short, long, value_name = "FILE")]
+    pub output: Option<PathBuf>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ExportCmd {
+    /// Markdown: stage headings, `- [ ]` / `- [x]` tasks, Depends lines
+    Md(ExportOut),
+    /// CSV: stage_id,stage_title,task_id,task_title,done,who,priority,due,depends
+    Csv(ExportOut),
+    /// JSON array of {title, body, labels}, one per open task (no network)
+    Github(ExportOut),
 }
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug)]

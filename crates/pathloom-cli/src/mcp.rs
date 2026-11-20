@@ -285,6 +285,26 @@ struct ImportParams {
     board: Option<String>,
     /// Report only; write nothing
     dry_run: Option<bool>,
+    /// Store a proposal for the user instead of writing
+    propose: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ExportParams {
+    /// md | csv | github (JSON array of issues {title, body, labels})
+    format: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct HistoryParams {
+    /// Entries to return (default 20, max 200)
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct RevertParams {
+    /// Entry id from list_history
+    id: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -627,7 +647,7 @@ impl PathloomServer {
     }
 
     #[tool(
-        description = "Import another tool's task list as stages with tasks and dependencies. format=spec-kit takes a GitHub Spec Kit tasks.md (phases become stages). Re-import updates the same stages. Use dry_run first."
+        description = "Import another tool's task list as stages with tasks and dependencies. format: spec-kit (GitHub Spec Kit tasks.md), md (headings = stages, - [ ] items = tasks), csv (Pathloom export, a title column, or Notion), notion (Notion CSV), trello (board JSON). Re-import updates the same stages. Use dry_run first; propose=true stores a proposal for the user."
     )]
     async fn import_tasks(&self, Parameters(a): Parameters<ImportParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
         finish((|| {
@@ -635,10 +655,34 @@ impl PathloomServer {
             if !dry {
                 self.guard()?;
             }
-            if a.format != "spec-kit" {
-                return Err(ApiError::new("INVALID_SPEC", format!("unknown format `{}` (supported: spec-kit)", a.format)));
-            }
-            ops::import(&self.project()?, &self.actor(&ctx, None)?, &a.text, a.prefix.as_deref(), a.board.as_deref(), dry, false)
+            let (p, actor) = (self.project()?, self.actor(&ctx, None)?);
+            ops::import_as(&p, &actor, &a.format, &a.text, a.prefix.as_deref(), a.board.as_deref(), dry, false, a.propose.unwrap_or(false))
+        })())
+    }
+
+    #[tool(
+        description = "The plan as text: format md (Markdown checklist), csv, or github (JSON array of {title, body, labels}, one per open task; no network). Returns {format, text}.",
+        annotations(read_only_hint = true)
+    )]
+    async fn export_plan(&self, Parameters(a): Parameters<ExportParams>) -> CallToolResult {
+        finish(self.project().and_then(|p| ops::export_plan(&p, &a.format)))
+    }
+
+    #[tool(
+        description = "Change history, newest first: {entries: [{id, at, action, files}]}. Every logged action that changed plan files is an entry; revert_change undoes one.",
+        annotations(read_only_hint = true)
+    )]
+    async fn list_history(&self, Parameters(a): Parameters<HistoryParams>) -> CallToolResult {
+        finish(self.project().and_then(|p| ops::history(&p, a.limit.unwrap_or(0))))
+    }
+
+    #[tool(
+        description = "Undo one history entry by id. Fails with CONFLICT (details.paths) when those files changed since; nothing is written then. The revert is logged and can be reverted too."
+    )]
+    async fn revert_change(&self, Parameters(a): Parameters<RevertParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
+        finish((|| {
+            self.guard()?;
+            ops::revert_change(&self.project()?, &self.actor(&ctx, None)?, &a.id)
         })())
     }
 

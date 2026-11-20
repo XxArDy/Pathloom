@@ -82,6 +82,10 @@ The user reads the plan as a picture, left to right. Follow these rules whenever
 - Positions: if the board has auto-layout on, the app re-arranges it after your change; otherwise call `layout_board` after restructuring many cards. Never move cards the user placed by hand.
 - Finish with a 3-5 line summary for the user: the phases and what comes next.
 
+## Export, import, history
+
+Export: `export_plan {format: "md"|"csv"|"github"}` (or `pathloom export md|csv|github [-o FILE]`). Import also takes `md`, `csv`, `notion` and `trello`: `import_tasks {format, text, dry_run: true}` (or `pathloom import md FILE --dry-run`; add `propose` / `--propose` to leave it to the user). History: `list_history` shows what each logged action changed; `revert_change {id}` undoes one entry and fails with CONFLICT when those files changed since (`pathloom history`, `pathloom revert ID`).
+
 ## Importing a plan
 
 A GitHub Spec Kit `tasks.md` (phases with `- [ ] T001 ...`) becomes stages with tasks and dependencies: `import_tasks {format: "spec-kit", text, dry_run: true}` (or `pathloom import spec-kit specs/<feature>/tasks.md`). Re-import after editing `tasks.md` adds new tasks and marks checked ones done.
