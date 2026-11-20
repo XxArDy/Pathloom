@@ -147,9 +147,7 @@ struct ClaimFile {
 }
 
 /// Stage key of a task id (`AUTH-02a` -> `AUTH`).
-fn stage_key_of(task_id: &str) -> &str {
-    task_id.split('-').next().unwrap_or("")
-}
+use crate::stagefile::stage_key_of;
 
 /// Locate `task_id` in `s`: `(its subtask ids, None)` for a top-level task, `([], Some(parent id))` for a
 /// subtask, `None` when unknown.
@@ -191,7 +189,7 @@ impl Project {
         let path = self.root.join(GITIGNORE);
         let cur = std::fs::read_to_string(&path).unwrap_or_default();
         let mut text = cur.clone();
-        for name in ["claims.json", "claims.lock"] {
+        for name in ["claims.json", "claims.lock", "plan.lock"] {
             if text.lines().any(|l| l.trim() == name) {
                 continue;
             }
@@ -300,6 +298,8 @@ impl Project {
         let mut related = subs;
         related.extend(parent);
         related.push(task_id.to_string());
+        // Lock order: plan first (the session history below edits the stage), then claims.
+        let _plan = self.lock_plan()?;
         let _lock = self.lock_claims()?;
         let mut claims = Self::live(self.read_claims_raw(), &now_s);
         if let Some(c) = claims.iter().find(|c| c.agent != agent && related.contains(&c.task_id)) {
@@ -594,6 +594,6 @@ mod tests {
         std::fs::write(&gi, "cache/").unwrap(); // old project, no trailing newline
         p.claim_task("A-01", "claude", 60, "").unwrap();
         p.claim_task("A-01", "claude", 60, "").unwrap();
-        assert_eq!(std::fs::read_to_string(&gi).unwrap(), "cache/\nclaims.json\nclaims.lock\n");
+        assert_eq!(std::fs::read_to_string(&gi).unwrap(), "cache/\nclaims.json\nclaims.lock\nplan.lock\n");
     }
 }

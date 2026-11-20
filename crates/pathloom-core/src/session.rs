@@ -56,7 +56,7 @@ impl SessionRef {
             return Err(bad("session title must be at most 120 characters on one line"));
         }
         if let Some(u) = &self.url {
-            check_url(u)?;
+            crate::url::check_session(u)?;
         }
         Ok(())
     }
@@ -64,24 +64,6 @@ impl SessionRef {
     fn same(&self, o: &SessionRef) -> bool {
         self.client == o.client && self.id == o.id
     }
-}
-
-fn check_url(u: &str) -> Result<()> {
-    let err = || bad(format!("session url `{u}` must be http(s):// or a custom scheme like app://, without spaces"));
-    if u.len() > 2048 || u.chars().any(|c| c.is_whitespace() || c.is_control()) {
-        return Err(err());
-    }
-    let (scheme, rest) = u.split_once("://").ok_or_else(err)?;
-    let mut cs = scheme.chars();
-    let ok = cs.next().is_some_and(|c| c.is_ascii_alphabetic())
-        && cs.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-'));
-    if !ok || rest.is_empty() {
-        return Err(err());
-    }
-    if matches!(scheme.to_ascii_lowercase().as_str(), "javascript" | "data" | "file" | "vbscript" | "blob") {
-        return Err(bad(format!("session url scheme `{scheme}` is not allowed")));
-    }
-    Ok(())
 }
 
 /// Add `s` to `list` (dedup by client+id: the old entry is replaced and moves to the end, keeping its

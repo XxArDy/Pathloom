@@ -338,8 +338,14 @@ fn validate_and_fix() {
     for c in ["BROKEN_DEPEND", "INVALID_TASK_ID", "PARSE_ERROR", "BROKEN_CARD"] {
         assert!(codes.contains(&c.to_string()), "{c} in {codes:?}");
     }
+    // an unparsable stage file blocks --fix (its key would look missing and links to it would be stripped)
+    assert!(p.validate_fix().is_err());
+    let z = d.path().join("plan/stages/Z.md");
+    let broken = std::fs::read(&z).unwrap();
+    std::fs::remove_file(&z).unwrap();
     let fixes = p.validate_fix().unwrap();
     assert_eq!(fixes.len(), 2, "{fixes:?}");
+    std::fs::write(&z, broken).unwrap();
     let codes: Vec<String> = p.validate().unwrap().into_iter().map(|i| i.code).collect();
     assert!(!codes.contains(&"BROKEN_DEPEND".into()) && !codes.contains(&"BROKEN_CARD".into()));
     assert!(codes.contains(&"INVALID_TASK_ID".into()), "not auto-fixed");

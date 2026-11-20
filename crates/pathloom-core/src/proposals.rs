@@ -113,6 +113,7 @@ impl Project {
 
     /// Validate `spec` (dry-run) and store it as a proposal. Nothing in `plan/` changes.
     pub fn propose(&self, spec: &ApplySpec, author: &str) -> Result<Proposal> {
+        let _lock = self.lock_plan()?;
         let opts = ApplyOptions { dry_run: true, author: author.into() };
         let (preview, files) = self.plan_apply(spec, &opts)?;
         let mut stage_hashes = BTreeMap::new();
@@ -225,6 +226,8 @@ impl Project {
     }
 
     fn decide_inner(&self, id: &str, approve: bool, comment: Option<&str>, by: &str) -> Result<(Proposal, Option<ApplyReport>)> {
+        // Under the lock, so two deciders cannot both apply one proposal; a proposal decided meanwhile is gone (NotFound).
+        let _lock = self.lock_plan()?;
         let p = self.load_proposal(id)?;
         if !approve {
             return Ok((self.finish_proposal(p, DecisionState::Rejected, comment, by)?, None));
@@ -238,6 +241,7 @@ impl Project {
 
     /// Apply the proposal for real (as its author). A stage changed since the proposal gives `Error::Conflict`.
     pub fn accept_proposal(&self, id: &str) -> Result<ApplyReport> {
+        let _lock = self.lock_plan()?;
         let stale = self.stale_stage(&self.load_proposal(id)?);
         let (_, report) = self.decide_inner(id, true, None, "owner")?;
         report.ok_or(Error::Conflict { key: stale.unwrap_or_default() })

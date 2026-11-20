@@ -13,6 +13,11 @@ pub fn is_valid_key(key: &str) -> bool {
         && b.iter().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
 }
 
+/// Stage key of a task id (`M0-02` and `M0-02a` -> `M0`).
+pub fn stage_key_of(task_id: &str) -> &str {
+    task_id.split('-').next().unwrap_or("")
+}
+
 const KNOWN: [&str; 15] = [
     "id", "title", "kind", "who", "due", "priority", "branch", "pr", "tags", "depends", "sessions", "evidence", "artifacts",
     "check", "task_info",
@@ -381,12 +386,20 @@ fn parse_body(st: &mut Stage, body: &str) {
             acc.current = Some((s, Vec::new()));
             continue;
         }
-        if let Some((_, lines)) = acc.current.as_mut() {
-            // Section ends at a heading or at any line that is not a list item (kept as text).
-            let item = line.trim().is_empty() || line.starts_with("- ") || line.starts_with("  - ");
+        if acc.current.is_some() {
+            // Section ends at a heading or at any line that is not a task / comment of that section
+            // (kept as text, so hand-written list items are never dropped on save).
+            let l = line.trim_end_matches(['\n', '\r']);
+            let item = l.trim().is_empty()
+                || match acc.current.as_ref().map(|c| c.0) {
+                    Some(Sec::Tasks) => task_line(l).is_some(),
+                    _ => comment_line(l).is_some(),
+                };
             let heading = !fence && (line.starts_with("# ") || line.starts_with("## "));
             if item && !heading {
-                lines.push(line);
+                if let Some((_, lines)) = acc.current.as_mut() {
+                    lines.push(line);
+                }
                 continue;
             }
             acc.flush(st);
@@ -407,18 +420,28 @@ fn check_box(line: &str) -> Option<(bool, &str)> {
     Some((done, cs.as_str().strip_prefix(']')?))
 }
 
+/// `- [ ] ID title` (top level) or `  - [x] ID title` (subtask): `(is_sub, done, rest after the box)`.
+fn task_line(l: &str) -> Option<(bool, bool, &str)> {
+    let (sub, rest) = match (l.strip_prefix("- "), l.strip_prefix("  - ")) {
+        (Some(r), _) => (false, r),
+        (None, Some(r)) => (true, r),
+        _ => return None,
+    };
+    check_box(rest).map(|(done, rest)| (sub, done, rest))
+}
+
+/// `- <at> <author> — <text>`.
+fn comment_line(l: &str) -> Option<Comment> {
+    let l = l.strip_prefix("- ")?;
+    let (at, rest) = l.split_once(' ')?;
+    let (author, text) = rest.split_once(" — ")?;
+    Some(Comment { at: at.into(), author: author.into(), text: text.into() })
+}
+
 fn parse_tasks(lines: &[&str]) -> Vec<Task> {
     let mut out: Vec<Task> = Vec::new();
     for raw in lines {
-        let l = raw.trim_end_matches(['\n', '\r']);
-        let (sub, rest) = if let Some(r) = l.strip_prefix("- ") {
-            (false, r)
-        } else if let Some(r) = l.strip_prefix("  - ") {
-            (true, r)
-        } else {
-            continue;
-        };
-        let Some((done, rest)) = check_box(rest) else { continue };
+        let Some((sub, done, rest)) = task_line(raw.trim_end_matches(['\n', '\r'])) else { continue };
         let rest = rest.trim();
         let (id, title) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
         let t = Task { id: id.into(), title: title.trim().into(), done, sub: vec![] };
@@ -431,15 +454,7 @@ fn parse_tasks(lines: &[&str]) -> Vec<Task> {
 }
 
 fn parse_comments(lines: &[&str]) -> Vec<Comment> {
-    lines
-        .iter()
-        .filter_map(|raw| {
-            let l = raw.trim_end_matches(['\n', '\r']).strip_prefix("- ")?;
-            let (at, rest) = l.split_once(' ')?;
-            let (author, text) = rest.split_once(" — ")?;
-            Some(Comment { at: at.into(), author: author.into(), text: text.into() })
-        })
-        .collect()
+    lines.iter().filter_map(|raw| comment_line(raw.trim_end_matches(['\n', '\r']))).collect()
 }
 
 fn scalar_str(v: &Value) -> Option<String> {

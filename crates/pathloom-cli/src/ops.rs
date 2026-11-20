@@ -45,6 +45,7 @@ impl From<Error> for ApiError {
                 ("CLAIMED", json!({"task_id": task_id, "by": by, "expires_at": expires_at}))
             }
             Error::InvalidName(n) if looks_like_path_escape(n) => ("OUT_OF_PROJECT", json!({"name": n})),
+            Error::OutsideProject(n) => ("OUT_OF_PROJECT", json!({"name": n})),
             Error::InvalidName(_)
             | Error::InvalidKey(_)
             | Error::InvalidSpec(_)
@@ -77,12 +78,8 @@ pub fn locate_root(project: Option<&Path>) -> ApiResult<PathBuf> {
 
 /// Open the project and refuse a `plan_dir` that points outside the root.
 pub fn open_project(root: &Path) -> ApiResult<Project> {
-    let p = Project::open(root)?;
-    let pd = Path::new(&p.config.plan_dir);
-    if pd.is_absolute() || pd.components().any(|c| matches!(c, Component::ParentDir | Component::Prefix(_))) {
-        return Err(ApiError::new("OUT_OF_PROJECT", format!("plan_dir `{}` is outside the project", p.config.plan_dir)));
-    }
-    Ok(p)
+    // `Project::open` refuses a `plan_dir` outside the root (OUT_OF_PROJECT).
+    Ok(Project::open(root)?)
 }
 
 pub fn parse_status(s: &str) -> ApiResult<Status> {
@@ -163,7 +160,7 @@ pub fn get_stage(p: &Project, key: &str) -> ApiResult<Value> {
 }
 
 pub fn project_info(p: &Project, read_only: bool) -> ApiResult<Value> {
-    let stages = p.load_stages()?;
+    let (stages, unreadable) = p.load_stages_report()?;
     let statuses = compute_statuses(&stages);
     let count = |s: Status| statuses.values().filter(|x| **x == s).count();
     Ok(json!({
@@ -179,6 +176,7 @@ pub fn project_info(p: &Project, read_only: bool) -> ApiResult<Value> {
                    "ready": count(Status::Ready), "blocked": count(Status::Blocked)},
         "next": p.next_tasks(5)?,
         "pending_proposals": p.list_proposals()?.len(),
+        "unreadable_files": unreadable,
     }))
 }
 
@@ -543,7 +541,7 @@ pub fn normalize_agent(s: &str) -> String {
 }
 
 fn stage_key(task_id: &str) -> String {
-    task_id.split('-').next().unwrap_or("").to_string()
+    pathloom_core::stage_key_of(task_id).to_string()
 }
 
 fn stage_file(p: &Project, key: &str) -> String {
@@ -659,7 +657,7 @@ pub fn release_task(p: &Project, a: &Actor, task_id: &str, force: bool) -> ApiRe
 
 /// Live claims; `silent` = no sign of life for 10 minutes.
 pub fn claims(p: &Project) -> ApiResult<Value> {
-    let now = unix_now();
+    let now = pathloom_core::now_secs();
     let list: Vec<Value> = p
         .claims()?
         .iter()
@@ -672,12 +670,6 @@ pub fn claims(p: &Project) -> ApiResult<Value> {
         })
         .collect();
     Ok(json!({"claims": list}))
-}
-
-fn unix_now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(0))
 }
 
 /// "Still working": refresh the actor's claims (one task or all) and keep them alive. Not logged.
@@ -799,7 +791,16 @@ pub fn import(
 ) -> ApiResult<Value> {
     let (mut spec, report) = p.import_spec_kit(text, prefix)?;
     spec.board = board.map(String::from);
+    // Same policy as an agent's `apply`: imported `[x]` tasks need evidence / go to review (`direct` = owner override).
+    let enforce = !dry_run && !direct;
+    if enforce {
+        let done: Vec<String> = spec.stages.iter().flat_map(|s| s.tasks_done.iter().cloned()).collect();
+        require_no_evidence_policy(p, &done)?;
+    }
+    let apply_now = enforce && p.config.agent_changes == pathloom_core::AgentChanges::Auto;
+    let diverted = if apply_now { divert_done_to_review(p, &mut spec)? } else { vec![] };
     let mut v = submit(p, &spec, &a.name, dry_run, direct)?;
+    v = review_diverted(p, a, &diverted, v)?;
     v["import"] = to_v(&report);
     Ok(log_submit(p, a, "import", &spec, v))
 }
@@ -873,7 +874,9 @@ pub fn list_agents(p: &Project) -> ApiResult<Value> {
 /// `--since` value: `YYYY-MM-DDTHH:MM:SSZ` (or `...THH:MMZ`) -> the fixed-width 20-char form.
 pub fn parse_since(s: &str) -> ApiResult<String> {
     let t = s.trim();
+    // Byte slicing below needs ASCII (a multibyte char at byte 16 would panic).
     let full = match t.len() {
+        _ if !t.is_ascii() => String::new(),
         20 => t.to_string(),
         17 => format!("{}:00Z", &t[..16]),
         _ => String::new(),
@@ -914,7 +917,7 @@ mod tests {
     fn since_formats() {
         assert_eq!(parse_since("2026-11-05T10:00:00Z").unwrap(), "2026-11-05T10:00:00Z");
         assert_eq!(parse_since("2026-11-05T10:00Z").unwrap(), "2026-11-05T10:00:00Z");
-        for bad in ["", "yesterday", "2026-11-05", "2026-11-05T10:00:00+02:00", "2026-11-05 10:00:00Z"] {
+        for bad in ["", "yesterday", "2026-11-05T10:0\u{43e}:00Z", "2026-11-05T10:00\u{43e}Z", "\u{43e}\u{43e}\u{43e}\u{43e}\u{43e}\u{43e}\u{43e}\u{43e}\u{43e}", "2026-11-05", "2026-11-05T10:00:00+02:00", "2026-11-05 10:00:00Z"] {
             assert!(parse_since(bad).is_err(), "{bad}");
         }
     }

@@ -34,28 +34,11 @@ fn main() -> ExitCode {
 
 /// Run `cmd` through the system shell with inherited output and record it as evidence.
 fn run_check(cmd: &str, summary: &Option<String>, log: &Option<String>, commit: &Option<String>) -> ApiResult<pathloom_core::Evidence> {
-    let mut c = if cfg!(windows) {
-        let mut c = std::process::Command::new("cmd");
-        c.args(["/C", cmd]);
-        c
-    } else {
-        let mut c = std::process::Command::new("sh");
-        c.args(["-c", cmd]);
-        c
-    };
-    let start = std::time::Instant::now();
-    let status = c.status().map_err(|e| ApiError::new("IO_ERROR", format!("cannot run `{cmd}`: {e}")))?;
-    Ok(pathloom_core::Evidence {
-        command: cmd.into(),
-        // No code = killed by a signal: count as failure.
-        exit_code: status.code().unwrap_or(-1),
-        duration_ms: Some(u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)),
-        summary: summary.clone(),
-        log: log.clone(),
-        commit: commit.clone(),
-        at: String::new(),
-        by: String::new(),
-    })
+    let mut e = pathloom_core::run_check(cmd, None, false).map_err(|e| ApiError::new("IO_ERROR", e.to_string()))?;
+    e.summary.clone_from(summary);
+    e.log.clone_from(log);
+    e.commit.clone_from(commit);
+    Ok(e)
 }
 
 fn open(cli: &Cli) -> ApiResult<Project> {

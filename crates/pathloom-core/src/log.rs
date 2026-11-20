@@ -119,6 +119,8 @@ impl Project {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
+        // Rotation and append under one lock: two processes must not both rotate (the second would drop the first's log).
+        let _lock = crate::fsutil::FileLock::acquire(&path.with_extension("lock"))?;
         if std::fs::metadata(&path).is_ok_and(|m| m.len() > max_bytes) {
             let old = self.root.join(OLD_LOG_FILE);
             let _ = std::fs::remove_file(&old); // Windows: rename does not replace

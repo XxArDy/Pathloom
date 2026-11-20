@@ -1,6 +1,6 @@
 use crate::error::{Error, Result, parse_err};
 use crate::evidence::Evidence;
-use crate::fsutil::write_atomic;
+use crate::fsutil::{ReentrantLock, write_atomic};
 use crate::keygen::generate_key;
 use crate::model::*;
 use crate::stagefile::is_valid_key;
@@ -10,10 +10,26 @@ use std::path::{Path, PathBuf};
 const CONFIG: &str = ".pathloom/project.toml";
 const BOARD_SUFFIX: &str = ".board.json";
 
+const PLAN_LOCK: &str = ".pathloom/plan.lock";
+
+/// Held while a plan file is read-modified-written; see [`Project::lock_plan`].
+pub(crate) type PlanGuard = ReentrantLock;
+
 #[derive(Debug, Clone)]
 pub struct Project {
     pub root: PathBuf,
     pub config: ProjectConfig,
+}
+
+/// `plan_dir` must be a relative path inside the project (no `..`, no drive, not absolute).
+fn check_plan_dir(plan_dir: &str) -> Result<()> {
+    use std::path::Component;
+    let pd = Path::new(plan_dir);
+    let bad = plan_dir.is_empty()
+        || pd.is_absolute()
+        || plan_dir.starts_with(['/', '\\'])
+        || pd.components().any(|c| matches!(c, Component::ParentDir | Component::Prefix(_) | Component::RootDir));
+    if bad { Err(Error::OutsideProject(plan_dir.into())) } else { Ok(()) }
 }
 
 pub(crate) fn read_text(path: &Path) -> Result<String> {
@@ -41,7 +57,7 @@ pub(crate) fn check_artifact(a: &str) -> Result<String> {
     }
     let lower = a.to_ascii_lowercase();
     if lower.starts_with("http://") || lower.starts_with("https://") {
-        return if a.contains(' ') { Err(bad()) } else { Ok(a) };
+        return crate::url::check_http(&a).map(|()| a.clone()).map_err(|_| bad());
     }
     if a.starts_with('/') || a.contains(':') || a.split('/').any(|c| c == "..") {
         return Err(bad());
@@ -104,7 +120,7 @@ impl Project {
         };
         let text = toml::to_string(&config).map_err(|e| parse_err(&cfg_path, e))?;
         write_atomic(&cfg_path, text.as_bytes())?;
-        write_atomic(&root.join(".pathloom/.gitignore"), b"cache/\nproposals/\nlog/\nclaims.json\nclaims.lock\n")?;
+        write_atomic(&root.join(".pathloom/.gitignore"), b"cache/\nproposals/\nlog/\nclaims.json\nclaims.lock\nplan.lock\n")?;
         let p = Project { root: root.to_path_buf(), config };
         std::fs::create_dir_all(p.plan_dir().join("stages"))?;
         if !p.board_path("roadmap").exists() {
@@ -116,35 +132,55 @@ impl Project {
     /// Switches how agent changes are applied (`auto` writes files, `review` creates proposals)
     /// and saves `.pathloom/project.toml`.
     pub fn set_agent_changes(&mut self, mode: AgentChanges) -> Result<()> {
-        self.update_config(|c| c.agent_changes = mode)
+        self.update_config("agent_changes", Some(mode.as_str().into()))
     }
 
     /// Whether agents must attach passing evidence to mark tasks done; saves `.pathloom/project.toml`.
     pub fn set_require_evidence(&mut self, on: bool) -> Result<()> {
-        self.update_config(|c| c.require_evidence = on)
+        self.update_config("require_evidence", Some(on.into()))
     }
 
     /// Whether agents cannot close tasks themselves (they go to review); saves `.pathloom/project.toml`.
     pub fn set_require_approval(&mut self, on: bool) -> Result<()> {
-        self.update_config(|c| c.require_approval = on)
+        // Off is the default and is not written (keeps the file as it was before the setting existed).
+        self.update_config("require_approval", on.then(|| true.into()))
     }
 
-    /// Sets (or, with an empty `read_ref`, removes) the `[git]` section; saves `.pathloom/project.toml`.
+    /// Sets (or, with an empty `read_ref`, removes) the `git` setting; saves `.pathloom/project.toml`.
     pub fn set_git_config(&mut self, read_ref: &str, fetch_interval_secs: u64) -> Result<()> {
         let read_ref = read_ref.trim();
-        let git = (!read_ref.is_empty())
-            .then(|| crate::model::GitConfig { read_ref: Some(read_ref.to_string()), fetch_interval_secs: fetch_interval_secs.max(10) });
-        self.update_config(|c| c.git = git)
+        let git = (!read_ref.is_empty()).then(|| {
+            let mut t = toml_edit::InlineTable::new();
+            t.insert("read_ref", read_ref.into());
+            t.insert("fetch_interval_secs", (fetch_interval_secs.max(10) as i64).into());
+            toml_edit::Value::InlineTable(t)
+        });
+        self.update_config("git", git)
     }
 
-    fn update_config(&mut self, f: impl FnOnce(&mut ProjectConfig)) -> Result<()> {
-        let mut config = self.config.clone();
-        f(&mut config);
+    /// Patch one key of `project.toml` in place: comments, unknown keys and external edits survive.
+    fn update_config(&mut self, key: &str, value: Option<toml_edit::Value>) -> Result<()> {
+        let _lock = self.lock_plan()?;
         let path = self.root.join(CONFIG);
-        let text = toml::to_string(&config).map_err(|e| parse_err(&path, e))?;
+        let mut doc: toml_edit::DocumentMut = read_text(&path)?.parse().map_err(|e| parse_err(&path, e))?;
+        match value {
+            Some(v) => doc[key] = toml_edit::value(v),
+            None => {
+                doc.remove(key);
+            }
+        }
+        let text = doc.to_string();
+        let config: ProjectConfig = toml::from_str(&text).map_err(|e| parse_err(&path, e))?;
         write_atomic(&path, text.as_bytes())?;
         self.config = config;
         Ok(())
+    }
+
+    /// Lock for read-modify-write of plan files (`.pathloom/plan.lock`), shared by the app, CLI and MCP processes.
+    /// Re-entrant on one thread, so public entry points can take it even when they call each other.
+    /// Lock order: plan lock first, then the claims lock (never the other way round).
+    pub(crate) fn lock_plan(&self) -> Result<PlanGuard> {
+        ReentrantLock::acquire(&self.root.join(PLAN_LOCK), std::time::Duration::from_secs(8))
     }
 
     pub fn open(root: &Path) -> Result<Project> {
@@ -152,7 +188,8 @@ impl Project {
         if !path.is_file() {
             return Err(Error::NotAProject);
         }
-        let config = toml::from_str(&read_text(&path)?).map_err(|e| parse_err(&path, e))?;
+        let config: ProjectConfig = toml::from_str(&read_text(&path)?).map_err(|e| parse_err(&path, e))?;
+        check_plan_dir(&config.plan_dir)?;
         Ok(Project { root: root.to_path_buf(), config })
     }
 
@@ -211,6 +248,7 @@ impl Project {
 
     pub fn create_board(&self, name: &str, title: &str) -> Result<Board> {
         check_board_name(name)?;
+        let _lock = self.lock_plan()?;
         if self.board_path(name).exists() {
             return Err(Error::DuplicateKey(name.into()));
         }
@@ -221,19 +259,17 @@ impl Project {
 
     // ---- stages ----
 
-    /// All stages, sorted by key.
+    /// All readable stages, sorted by key. A stage file that does not parse is skipped, so one bad file does not
+    /// hide the project; [`Project::load_stages_report`] says which were skipped. Writes to such a file still fail.
     pub fn load_stages(&self) -> Result<Vec<Stage>> {
-        let mut out = Vec::new();
-        if let Ok(rd) = std::fs::read_dir(self.plan_dir().join("stages")) {
-            for e in rd {
-                let path = e?.path();
-                if path.extension().is_some_and(|x| x == "md") {
-                    out.push(Stage::from_markdown(&path, &read_text(&path)?)?);
-                }
-            }
-        }
-        out.sort_by(|a, b| a.key.cmp(&b.key));
-        Ok(out)
+        Ok(self.load_stages_report()?.0)
+    }
+
+    /// Like [`Project::load_stages`], plus a `PARSE_ERROR` issue for each stage file that was skipped.
+    pub fn load_stages_report(&self) -> Result<(Vec<Stage>, Vec<crate::Issue>)> {
+        let mut issues = Vec::new();
+        let stages = self.scan_stages(&mut issues)?;
+        Ok((stages, issues))
     }
 
     pub fn load_stage(&self, key: &str) -> Result<Stage> {
@@ -252,6 +288,7 @@ impl Project {
 
     /// `key`: explicit (validated, must be free) or generated from the title.
     pub fn create_stage(&self, title: &str, key: Option<&str>) -> Result<Stage> {
+        let _lock = self.lock_plan()?;
         let taken = |k: &str| self.stage_path(k).exists();
         let key = match key {
             Some(k) => {
@@ -271,6 +308,7 @@ impl Project {
     /// Deletes the file and removes `key` from other stages' `depends`.
     pub fn delete_stage(&self, key: &str) -> Result<()> {
         check_key(key)?;
+        let _lock = self.lock_plan()?;
         let path = self.stage_path(key);
         if !path.is_file() {
             return Err(Error::NotFound(format!("stage {key}")));
@@ -287,6 +325,7 @@ impl Project {
     }
 
     pub(crate) fn edit_stage(&self, key: &str, f: impl FnOnce(&mut Stage) -> Result<()>) -> Result<Stage> {
+        let _lock = self.lock_plan()?;
         let mut s = self.load_stage(key)?;
         f(&mut s)?;
         self.save_stage(&s)?;
@@ -373,7 +412,7 @@ impl Project {
 
     /// Adds a subtask under a top-level task: `M0-02` gets `M0-02a`, `M0-02b`, …
     pub fn add_subtask(&self, task_id: &str, title: &str) -> Result<Stage> {
-        let key = task_id.split('-').next().unwrap_or("").to_string();
+        let key = crate::stage_key_of(task_id).to_string();
         self.edit_stage(&key, |s| {
             let task = s
                 .tasks
@@ -392,7 +431,7 @@ impl Project {
 
     /// Edit a task or subtask located by its id (`M0-02` or `M0-02a`).
     fn edit_task(&self, task_id: &str, f: impl FnOnce(&mut Vec<Task>, usize, Option<usize>)) -> Result<Stage> {
-        let key = task_id.split('-').next().unwrap_or("");
+        let key = crate::stage_key_of(task_id);
         self.edit_stage(key, |s| {
             let pos = s.tasks.iter().enumerate().find_map(|(i, t)| {
                 if t.id == task_id {
@@ -494,7 +533,7 @@ impl Project {
     }
 
     pub(crate) fn edit_task_info(&self, task_id: &str, f: impl FnOnce(&mut TaskInfo) -> Result<()>) -> Result<Stage> {
-        let key = task_id.split('-').next().unwrap_or("");
+        let key = crate::stage_key_of(task_id);
         self.edit_stage(key, |s| {
             if !s.task_ids().contains(task_id) {
                 return Err(Error::NotFound(format!("task {task_id}")));
@@ -523,7 +562,7 @@ impl Project {
                 )));
             }
         }
-        let key = task_id.split('-').next().unwrap_or("");
+        let key = crate::stage_key_of(task_id);
         let s = self.edit_stage(key, |s| {
             mark_done(s, task_id, done)?;
             if let Some(mut e) = ev {
@@ -550,7 +589,11 @@ impl Project {
     pub fn remove_task(&self, task_id: &str) -> Result<Stage> {
         self.edit_task(task_id, |tasks, i, j| match j {
             Some(j) => {
-                tasks[i].sub.remove(j);
+                let t = &mut tasks[i];
+                t.sub.remove(j);
+                if !t.sub.is_empty() {
+                    t.done = t.sub.iter().all(|x| x.done);
+                }
             }
             None => {
                 tasks.remove(i);
@@ -562,6 +605,7 @@ impl Project {
     pub fn link(&self, from: &str, to: &str, soft: bool) -> Result<()> {
         check_key(from)?;
         check_key(to)?;
+        let _lock = self.lock_plan()?;
         let stages = self.load_stages()?;
         for k in [from, to] {
             if !stages.iter().any(|s| s.key == k) {

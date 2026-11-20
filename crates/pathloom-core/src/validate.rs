@@ -43,7 +43,7 @@ impl Project {
     }
 
     /// Stage files that parse, plus issues for those that do not.
-    fn scan_stages(&self, issues: &mut Vec<Issue>) -> Result<Vec<Stage>> {
+    pub(crate) fn scan_stages(&self, issues: &mut Vec<Issue>) -> Result<Vec<Stage>> {
         let mut out = Vec::new();
         if let Ok(rd) = std::fs::read_dir(self.plan_dir().join("stages")) {
             for e in rd {
@@ -154,8 +154,17 @@ impl Project {
     }
 
     pub fn validate_fix(&self) -> Result<Vec<String>> {
+        let _lock = self.lock_plan()?;
         let mut ignored = Vec::new();
         let stages = self.scan_stages(&mut ignored)?;
+        // An unreadable stage file is not in `stages`: its key would look "missing" and every link to it would be stripped.
+        if !ignored.is_empty() {
+            let files: Vec<&str> = ignored.iter().map(|i| i.path.as_str()).collect();
+            return Err(crate::error::Error::InvalidSpec(format!(
+                "cannot fix while stage files do not parse (PARSE_ERROR): {}. Repair or delete them first",
+                files.join(", ")
+            )));
+        }
         let keys: HashSet<String> = stages.iter().map(|s| s.key.clone()).collect();
         let mut fixes = Vec::new();
         for mut s in stages {

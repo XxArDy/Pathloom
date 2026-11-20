@@ -61,9 +61,9 @@ impl Evidence {
             return Err(bad("evidence summary must be at most 120 characters"));
         }
         if let Some(l) = &e.log {
-            let lower = l.to_ascii_lowercase();
-            if l.len() > 2048 || l.contains(' ') || ["javascript:", "data:", "vbscript:"].iter().any(|s| lower.starts_with(s)) {
-                return Err(bad("evidence log must be a link or a path without spaces (no javascript:/data: links)"));
+            let web = crate::url::scheme_of(l).is_some();
+            if l.len() > 2048 || l.contains(' ') || (web && crate::url::check_http(l).is_err()) {
+                return Err(bad("evidence log must be an http(s) link or a path without spaces"));
             }
         }
         Ok(e)

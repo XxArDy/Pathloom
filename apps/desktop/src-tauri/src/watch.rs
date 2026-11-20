@@ -27,6 +27,8 @@ struct UndoGroup {
     id: u64,
     at: Instant,
     before: HashMap<PathBuf, Option<Vec<u8>>>,
+    /// Hash of the content each file had after the change (None = deleted): revert only if it still holds.
+    after: HashMap<PathBuf, Option<String>>,
 }
 
 /// Last known content of every plan file + recent groups of external changes.
@@ -57,7 +59,7 @@ impl Snapshot {
         let join = self.groups.last().is_some_and(|g| g.at.elapsed() < GROUP_WINDOW);
         if !join {
             self.next_id += 1;
-            self.groups.push(UndoGroup { id: self.next_id, at: Instant::now(), before: HashMap::new() });
+            self.groups.push(UndoGroup { id: self.next_id, at: Instant::now(), before: HashMap::new(), after: HashMap::new() });
             if self.groups.len() > MAX_GROUPS {
                 self.groups.remove(0);
             }
@@ -65,6 +67,7 @@ impl Snapshot {
         let group = self.groups.last_mut()?;
         group.at = Instant::now();
         group.before.entry(path.to_path_buf()).or_insert(prev);
+        group.after.insert(path.to_path_buf(), now.as_deref().map(pathloom_core::hash_bytes));
         match now {
             Some(bytes) => self.files.insert(path.to_path_buf(), bytes),
             None => self.files.remove(path),
@@ -72,12 +75,18 @@ impl Snapshot {
         Some(group.id)
     }
 
-    /// Restores every file of the group to its previous content. Returns the touched paths.
-    pub fn revert(&mut self, id: u64) -> std::io::Result<Vec<PathBuf>> {
-        let Some(pos) = self.groups.iter().position(|g| g.id == id) else { return Ok(vec![]) };
+    /// Restores every file of the group to its previous content, unless the file changed again after the
+    /// group (then it is skipped). Returns `(restored paths, conflicting paths)`.
+    pub fn revert(&mut self, id: u64) -> std::io::Result<(Vec<PathBuf>, Vec<PathBuf>)> {
+        let Some(pos) = self.groups.iter().position(|g| g.id == id) else { return Ok((vec![], vec![])) };
         let group = self.groups.remove(pos);
-        let mut touched = Vec::new();
+        let (mut touched, mut conflicts) = (Vec::new(), Vec::new());
         for (path, before) in group.before {
+            let now = std::fs::read(&path).ok().map(|b| pathloom_core::hash_bytes(&b));
+            if group.after.get(&path) != Some(&now) {
+                conflicts.push(path);
+                continue;
+            }
             match &before {
                 Some(bytes) => pathloom_core::write_file_atomic(&path, bytes)?,
                 None => {
@@ -92,7 +101,7 @@ impl Snapshot {
             };
             touched.push(path);
         }
-        Ok(touched)
+        Ok((touched, conflicts))
     }
 
     /// Our own writes: keep the snapshot current without creating undo groups.
@@ -148,6 +157,9 @@ pub fn start(app: AppHandle, root: PathBuf, plan_dir: PathBuf, snapshot: &'stati
         let mut agents = false;
         let Ok(mut snap) = snapshot.lock() else { return };
         for p in paths {
+            if p.extension().is_some_and(|x| x == "lock") {
+                continue;
+            }
             if p == claims_w || p.starts_with(&log_w) {
                 agents = true;
                 continue;
