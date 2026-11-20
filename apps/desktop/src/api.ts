@@ -13,7 +13,12 @@ export interface ProjectSnapshot {
 
 /** Partial stage update; omitted fields stay unchanged, '' clears due/branch. */
 export interface UsageTotals { tokens_in: number; tokens_out: number; cost_usd?: number }
-export interface UsageSummary { total: UsageTotals; by_agent: Record<string, UsageTotals>; by_stage: Record<string, UsageTotals> }
+export interface UsageSummary {
+  total: UsageTotals; by_agent: Record<string, UsageTotals>; by_stage: Record<string, UsageTotals>;
+  by_stage_model?: Record<string, Record<string, UsageTotals>>;
+  quota?: Record<string, { percent_weekly: number; resets_at?: string; at: string }>;
+}
+export interface CommitRow { sha: string; subject: string; author: string; at: string; tasks: string[] }
 
 export interface InboxItem { task_id: string; stage: string; title: string; kind: 'approval' | 'decision' | 'owner' }
 
@@ -56,6 +61,8 @@ export const api = {
   taskAdd: (key: string, title: string) => invoke<StageView[]>('task_add', { key, title }),
   gateRun: (key: string) => invoke<StageView[]>('gate_run', { key }),
   artifactOpen: (path: string) => invoke<void>('artifact_open', { path }),
+  gitHead: () => invoke<string | null>('git_head'),
+  stageCommits: (key: string) => invoke<CommitRow[]>('stage_commits', { key }),
   usageSummary: () => invoke<UsageSummary>('usage_summary'),
   stageUpdate: (key: string, meta: StageMeta) => invoke<StageView[]>('stage_update', { key, meta }),
   stageSource: (key: string) => invoke<string>('stage_source', { key }),

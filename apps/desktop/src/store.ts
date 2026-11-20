@@ -20,6 +20,8 @@ interface AppStore {
   selectedTask: string | null;
   /** Side panel width in px (persisted). */
   inspWidth: number;
+  /** Usage meter turns yellow from this weekly-limit percent (persisted). */
+  quotaWarn: number;
   tool: Tool;
   zoom: number;
   save: SaveState;
@@ -107,6 +109,7 @@ export const useApp = create<AppStore>((set, get) => ({
   selectedStage: null,
   selectedTask: null,
   inspWidth: Number(localStorage.getItem('pathloom.inspWidth')) || 380,
+  quotaWarn: Number(localStorage.getItem('pathloom.quotaWarn')) || 70,
   tool: 'select',
   zoom: 1,
   save: { kind: 'saved' },
@@ -226,6 +229,7 @@ useApp.subscribe((st, prev) => {
 
 // Persist the side panel width; a new stage opens on its details, not on a task of the previous one.
 useApp.subscribe((st, prev) => {
+  try { if (st.quotaWarn !== prev.quotaWarn) localStorage.setItem('pathloom.quotaWarn', String(st.quotaWarn)); } catch { /* ignore */ }
   try { if (st.inspWidth !== prev.inspWidth) localStorage.setItem('pathloom.inspWidth', String(Math.round(st.inspWidth))); } catch { /* ignore */ }
   if (st.selectedStage !== prev.selectedStage && st.selectedTask && !st.selectedTask.startsWith(`${st.selectedStage}-`)) {
     useApp.setState({ selectedTask: null });

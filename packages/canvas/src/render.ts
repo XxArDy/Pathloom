@@ -782,7 +782,7 @@ export class Renderer {
     }
   }
 
-  private drawTaskRow(ctx: CanvasRenderingContext2D, task: CardLayout['tasks'][number]['task'], y: number, W: number, s: RenderState, claim?: { agent: string; silent?: boolean; note?: string }, verified = false, claimedRows = 0) {
+  private drawTaskRow(ctx: CanvasRenderingContext2D, task: CardLayout['tasks'][number]['task'], y: number, W: number, s: RenderState, claim?: { agent: string; silent?: boolean; stale?: boolean; note?: string }, verified = false, claimedRows = 0) {
     const t = s.theme, px = CARD.padX, cy = y + CARD.taskH / 2, done = taskDone(task);
     const cx = px + CARD.chk / 2 + 1;
     ctx.beginPath(); ctx.arc(cx, cy, CARD.chk / 2 - 0.5, 0, Math.PI * 2);
@@ -794,7 +794,7 @@ export class Renderer {
       if (verified) { ctx.beginPath(); ctx.arc(cx, cy, CARD.chk / 2 + 2, 0, Math.PI * 2); ctx.strokeStyle = t.ok; ctx.lineWidth = 1.2; ctx.stroke(); }
     } else if (claim) {
       // in progress: ring and half fill in the agent's colour (warning colour when silent)
-      const col = claim.silent ? t.warn : resolveAgent(claim.agent, s.agents, t).color;
+      const col = claim.stale ? t.bad : claim.silent ? t.warn : resolveAgent(claim.agent, s.agents, t).color;
       ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.stroke();
       ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, CARD.chk / 2 - 3, -Math.PI / 2, Math.PI / 2); ctx.closePath(); ctx.fillStyle = col; ctx.fill();
     } else { ctx.strokeStyle = t.border2; ctx.lineWidth = 1.5; ctx.stroke(); }
@@ -807,7 +807,7 @@ export class Renderer {
     if (claim) {
       const r = resolveAgent(claim.agent, s.agents, t), { name, avatar } = r;
       // silent agent (no sign of life for 10 min): warning colour instead of its own
-      const col = claim.silent ? t.warn : r.color;
+      const col = claim.stale ? t.bad : claim.silent ? t.warn : r.color;
       ctx.font = fontOf(10, t.fontUi, 600);
       const avW = avatarWidth(avatar, (q) => measureText(q, ctx.font));
       const budget = claimChipBudget(right, x, claimedRows);
@@ -858,7 +858,7 @@ export class Renderer {
     const text = pillLabel(stage, s.labels);
     // a live claim turns the pill into "working" in the agent's colour (warning colour when it went silent)
     const cl = stage.status !== 'done' ? stage.claims?.[0] : undefined;
-    const ac = cl && (cl.silent ? s.theme.warn : resolveAgent(cl.agent, s.agents, s.theme).color);
+    const ac = cl && (cl.stale ? s.theme.bad : cl.silent ? s.theme.warn : resolveAgent(cl.agent, s.agents, s.theme).color);
     const { fg, bg } = ac ? { fg: ac, bg: withAlpha(ac, 0.16) } : statusColors(stage.status, s.theme);
     ctx.font = fontOf(11, s.theme.fontUi);
     const w = pillWidth(text, s.theme), h = 20, x = right - w;
@@ -965,7 +965,7 @@ export class Renderer {
       ctx.globalAlpha = o.pulseAlpha;
       for (const p of o.pulses) {
         const cl = p.stage.claims![0], text = pillLabel(p.stage, s.labels);
-        ctx.fillStyle = cl.silent ? t.warn : resolveAgent(cl.agent, s.agents, t).color;
+        ctx.fillStyle = cl.stale ? t.bad : cl.silent ? t.warn : resolveAgent(cl.agent, s.agents, t).color;
         ctx.beginPath(); ctx.arc(p.el.x + p.el.w - CARD.padX - pillWidth(text, t) - 9, p.el.y + CARD.padTop + CARD.headH / 2, 3.5, 0, Math.PI * 2); ctx.fill();
       }
       ctx.restore();

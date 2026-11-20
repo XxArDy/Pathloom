@@ -159,7 +159,7 @@ function CopyLine({ text }: { text: string }) {
 /** How to connect AI agents: review mode, CLI path, MCP config for Claude Code and other clients. */
 function Agents() {
   const { t } = useTranslation();
-  const { project, set } = useApp();
+  const { project, set, quotaWarn } = useApp();
   const [setup, setSetup] = useState<{ cliPath: string | null; agentChanges: 'auto' | 'review'; requireEvidence: boolean } | null>(null);
   useEffect(() => { api.agentSetup().then(setSetup).catch(() => setSetup({ cliPath: null, agentChanges: 'auto', requireEvidence: false })); }, []);
   if (!setup) return null;
@@ -180,6 +180,12 @@ function Agents() {
         {t('settings.requireEvidence')}
       </label>
       <p className="hint">{t('settings.requireEvidenceHint')}</p>
+      <label className="radio">
+        {t('settings.quotaWarn')}
+        <input type="number" min={1} max={100} value={quotaWarn} style={{ width: 64, marginLeft: 8 }}
+          onChange={(e) => { const v = Math.round(Number(e.currentTarget.value)); if (v >= 1 && v <= 100) set({ quotaWarn: v }); }} />
+      </label>
+      <p className="hint">{t('settings.quotaWarnHint')}</p>
       <h3>{t('settings.claudeCode')}</h3>
       <p className="hint">{t('settings.claudeHint')}</p>
       <CopyLine text={'claude mcp add pathloom -- ' + cli + ' mcp'} />

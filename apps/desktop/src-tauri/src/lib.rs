@@ -368,6 +368,29 @@ fn task_file_remove(state: State<'_, AppState>, task_id: String, path: String) -
 }
 
 #[tauri::command]
+fn git_head(state: State<'_, AppState>) -> CmdResult<Option<String>> {
+    with_project(&state, |p| Ok(pathloom_core::commits::head(&p.root)))
+}
+
+/// Recent commits that mention the stage (by key or one of its tasks).
+#[tauri::command]
+async fn stage_commits(state: State<'_, AppState>, key: String) -> CmdResult<Vec<serde_json::Value>> {
+    let (root, keys) = with_project(&state, |p| {
+        let keys: std::collections::HashSet<String> = views(p)?.into_iter().map(|s| s.stage.key).collect();
+        Ok((p.root.clone(), keys))
+    })?;
+    tauri::async_runtime::spawn_blocking(move || {
+        pathloom_core::commits::scan(&root, 500, &keys)
+            .into_iter()
+            .filter(|c| c.stages.contains(&key))
+            .map(|c| serde_json::json!({ "sha": c.sha, "subject": c.subject, "author": c.author, "at": c.at, "tasks": c.tasks }))
+            .collect()
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn usage_summary(state: State<'_, AppState>) -> CmdResult<pathloom_core::UsageSummary> {
     with_project(&state, |p| p.usage_summary())
 }
@@ -720,6 +743,8 @@ pub fn run() {
             board_arrange,
             artifact_open,
             usage_summary,
+            git_head,
+            stage_commits,
             gate_run,
             proposals_list,
             proposal_decide,
