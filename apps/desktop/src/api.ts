@@ -50,7 +50,18 @@ export interface RecentProject {
 /** Git mode: the board is read from `readRef`; owner actions that cannot be written now wait in a queue. */
 export interface GitStatus { readRef: string | null; sha: string | null; error: string | null; queued: number }
 
+/** Parsed `pathloom://open` link (from the shell). */
+export interface LinkTarget { project: string; stage: string | null; task: string | null }
+
+/** Details of an ALREADY_DECIDED error ("... is already decided by BY at AT: VALUE"), or null for any other error. */
+export function alreadyDecided(e: unknown): { by: string; at: string } | null {
+  const m = /is already decided by (.+?) at (\S+): /.exec(errorText(e));
+  return m ? { by: m[1], at: m[2] } : null;
+}
+
 export const api = {
+  linkMake: (id?: string) => invoke<string>('link_make', { id: id ?? null }),
+  deeplinkPending: () => invoke<LinkTarget | null>('deeplink_pending'),
   projectCreate: (path: string, name: string) => invoke<ProjectSnapshot>('project_create', { path, name }),
   projectOpen: (path: string) => invoke<ProjectSnapshot>('project_open', { path }),
   demoOpen: (lang: string) => invoke<ProjectSnapshot>('demo_open', { lang }),

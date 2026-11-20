@@ -512,6 +512,11 @@ pub fn decisions_md(p: &Project) -> ApiResult<String> {
     Ok(blocks.join("\n"))
 }
 
+/// `pathloom://` link to the project, a stage key or a task id (m10 §Б7).
+pub fn make_link(p: &Project, id: Option<&str>) -> ApiResult<Value> {
+    Ok(json!({"link": pathloom_core::link::make_link(&p.root, id)?}))
+}
+
 pub fn inbox(p: &Project) -> ApiResult<Value> {
     let items = p.inbox()?;
     Ok(json!({"count": items.len(), "items": items}))

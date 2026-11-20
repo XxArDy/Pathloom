@@ -1,6 +1,7 @@
 //! Tauri shell: thin commands over `pathloom-core`. All file access goes through the core;
 //! the WebView has no filesystem permissions.
 
+mod deeplink;
 mod gitmode;
 mod recent;
 mod watch;
@@ -803,14 +804,35 @@ fn template_save(state: State<'_, AppState>, name: String, title: String) -> Cmd
 
 pub fn run() {
     let result = tauri::Builder::default()
+        // Must be the first plugin: a second launch (e.g. a pathloom:// link) is forwarded to this instance.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .register_uri_scheme_protocol("plasset", |ctx, request| serve_asset(ctx.app_handle(), request.uri().path()))
         .manage(AppState::default())
+        .setup(|app| {
+            use tauri_plugin_deep_link::DeepLinkExt;
+            // Installed builds register the scheme in the installer; dev builds do it here.
+            #[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
+            let _ = app.deep_link().register_all();
+            let h = app.handle().clone();
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                deeplink::handle(&h, &urls.iter().map(|u| u.as_str()).collect::<Vec<_>>());
+            }
+            app.deep_link().on_open_url(move |e| deeplink::handle(&h, &e.urls().iter().map(|u| u.as_str()).collect::<Vec<_>>()));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             project_create,
             project_open,
+            deeplink::deeplink_pending,
+            deeplink::link_make,
             recent_projects,
             demo_open,
             board_load,

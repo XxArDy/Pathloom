@@ -408,3 +408,10 @@ pre.code { font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6; b
 .tpl-list .tpl-d { display: block; color: var(--mu); font-size: 12px; margin-top: 2px; }
 .tpl-form { display: grid; gap: 8px; padding: 14px 18px 18px; }
 .tpl-form input { padding: 7px 9px; border-radius: 8px; border: 1px solid var(--bd); background: var(--card); color: var(--tx); }
+
+.sess-state { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--tx2); white-space: nowrap; }
+.sess-state i { width: 8px; height: 8px; border-radius: 50%; background: var(--mu); }
+.sess-state.st-working i { background: var(--ac); }
+.sess-state.st-waiting i { background: var(--warn); }
+.sess-state.st-blocked i, .sess-state.st-error i { background: var(--bad); }
+.sess-state.st-done i { background: var(--ok); }

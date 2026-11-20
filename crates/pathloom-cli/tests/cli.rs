@@ -694,6 +694,17 @@ fn add_schedule_and_export_html() {
 }
 
 #[test]
+fn deeplink_prints_and_parses() {
+    let p = Proj::new();
+    let l = p.json(&["deeplink"])["link"].as_str().unwrap().to_string();
+    assert_eq!(pathloom_core::link::parse_link(&l).unwrap().stage, None);
+    let l = p.json(&["deeplink", "A-02"])["link"].as_str().unwrap().to_string();
+    let t = pathloom_core::link::parse_link(&l).unwrap();
+    assert_eq!((t.stage.as_deref(), t.task.as_deref()), (Some("A"), Some("A-02")));
+    assert!(!p.run(&["deeplink", "bad key"]).status.success());
+}
+
+#[test]
 fn export_import_history_and_revert() {
     let p = Proj::new();
     let f = p.dir.path().join("spec.yaml");

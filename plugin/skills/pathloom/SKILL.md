@@ -126,4 +126,6 @@ pathloom apply plan.yaml --dry-run
 pathloom validate
 ```
 
+Share a card with the user as a link: `make_link {id}` (MCP) or `pathloom deeplink AUTH-01` gives `pathloom://open?project=...&stage=AUTH&task=AUTH-01`; it opens the app on that card.
+
 Errors are structured: `NOT_FOUND`, `CYCLE`, `DUPLICATE_KEY`, `CONFLICT`, `INVALID_SPEC`, `READ_ONLY`, `OUT_OF_PROJECT`, `EVIDENCE_REQUIRED`, `CHECK_FAILED`.

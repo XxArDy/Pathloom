@@ -24,6 +24,7 @@ mod interchange;
 mod indexkey;
 mod keygen;
 mod layout;
+pub mod link;
 mod log;
 mod model;
 mod next;

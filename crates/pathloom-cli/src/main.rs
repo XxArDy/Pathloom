@@ -703,6 +703,10 @@ not applied (see result)." } else { "
 (draft only; add --yes to apply)" }
             });
         }
+        Cmd::Deeplink { id } => {
+            let v = ops::make_link(&open(cli)?, id.as_deref())?;
+            emit(cli, &v, || s(&v, "link").to_string());
+        }
         Cmd::Schedule => {
             let v = people::schedule(&open(cli)?)?;
             emit(cli, &v, || people::schedule_table(&v));

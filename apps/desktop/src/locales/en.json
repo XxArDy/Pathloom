@@ -324,11 +324,20 @@
     "title": "Sessions",
     "copy": "Copy session id",
     "open": "Open session",
-    "confirm": "Open this link in its app?\n{{url}}"
+    "confirm": "Open this link in its app?\n{{url}}",
+    "since": "State changed {{ago}}",
+    "state": {
+      "working": "Working",
+      "waiting": "Waiting",
+      "blocked": "Blocked",
+      "error": "Error",
+      "done": "Done"
+    }
   },
   "evidence": {
     "verified": "Verified",
-    "verifiedOn": "Verified on {{sha}}"
+    "verifiedOn": "Verified on {{sha}}",
+    "checkedOn": "checked on {{ref}}"
   },
   "gate": {
     "check": "Check",
@@ -399,7 +408,8 @@
       "quality": "Quality",
       "scale": "Scale",
       "wrong-place": "Wrong place"
-    }
+    },
+    "alreadyDecided": "Already decided by {{by}} at {{at}}"
   },
   "decision": {
     "answered": "Answer",
@@ -472,5 +482,8 @@
     "pickFolder": "Choose a folder for the new project",
     "cancel": "Cancel",
     "ok": "Save"
+  },
+  "link": {
+    "copy": "Copy link to this card"
   }
 }

@@ -5,6 +5,7 @@ import { reopenLastProject } from './projectActions';
 import { StartScreen } from './components/StartScreen';
 import { Workspace } from './components/Workspace';
 import { QuickPick } from './components/QuickPick';
+import { startDeepLinks } from './deeplink';
 
 export function App() {
   const project = useApp((s) => s.project);
@@ -21,7 +22,14 @@ export function App() {
   }, [theme, customThemes]);
 
   useEffect(() => {
-    void reopenLastProject().finally(() => setBooting(false));
+    let stop = () => {};
+    // The launch link (if any) wins over the reopened project.
+    void reopenLastProject()
+      .then(() => startDeepLinks())
+      .then((un) => { stop = un; })
+      .catch(() => {})
+      .finally(() => setBooting(false));
+    return () => stop();
   }, []);
 
   if (booting) return null;

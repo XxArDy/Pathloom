@@ -138,6 +138,11 @@ pub enum Cmd {
     },
     /// Dates, slack and the critical path of the plan
     Schedule,
+    /// Print a pathloom:// link that opens the project (or a stage key / task id) in the app
+    Deeplink {
+        /// Stage key (AUTH) or task id (AUTH-01); omit for the project
+        id: Option<String>,
+    },
     /// Overdue, due today (or within 7 days with --week), blocked, and what waits for you
     Today {
         #[arg(long)]

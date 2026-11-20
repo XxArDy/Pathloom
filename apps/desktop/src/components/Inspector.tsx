@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { ask, open as openFile } from '@tauri-apps/plugin-dialog';
 import {
   IconX, IconCheck, IconPlus, IconCalendar, IconFlag, IconUser, IconGitBranch, IconTrash,
-  IconFileText, IconListDetails, IconDiamond, IconCornerDownRight, IconCopy, IconExternalLink, IconShieldCheck, IconAlertTriangle,
+  IconFileText, IconListDetails, IconDiamond, IconCornerDownRight, IconExternalLink, IconShieldCheck, IconAlertTriangle,
   IconArrowLeft, IconPaperclip, IconLink, IconChevronRight,
 } from '@tabler/icons-react';
 import type { StageView, Task } from '@pathloom/canvas';
@@ -15,6 +15,7 @@ import { agentText, ago, claimOf, knownWhos, whoColor, whoText, type LogEntry } 
 import type { Evidence } from '@pathloom/canvas';
 import { findTheme } from '../theme';
 import { ApprovalBox, DecisionBox, taskKind } from './ApprovalCard';
+import { CopyLink, SessionRow } from './SessionRow';
 import { StageCommits, StageCost, TaskLive, evidenceStale, useHead } from './LiveBits';
 
 /** External session links open only after the user confirms (the URL may start another app). */
@@ -29,6 +30,8 @@ function evidenceText(e: Evidence, t: (k: string, o?: Record<string, unknown>) =
   if (e.summary) parts.push(e.summary);
   if (e.duration_ms != null) parts.push(e.duration_ms < 1000 ? `${e.duration_ms} ms` : `${Math.round(e.duration_ms / 100) / 10} s`);
   if (e.by || e.at) parts.push([e.by ? name(e.by) : '', e.at ? ago(e.at, t as never) : ''].filter(Boolean).join(', '));
+  const ref = [e.branch, e.commit?.slice(0, 7)].filter(Boolean).join('@');
+  if (ref) parts.push(t('evidence.checkedOn', { ref }));
   const label = evidenceStale(e.commit, head) ? t('evidence.verifiedOn', { sha: (e.commit ?? '').slice(0, 7) }) : t('evidence.verified');
   return `${label}: ${parts.join(' · ')}${e.log ? `\n${e.log}` : ''}`;
 }
@@ -194,7 +197,8 @@ export function Inspector({ stageKey }: { stageKey: string }) {
           <button role="tab" aria-selected={tab === 'details'} className={tab === 'details' ? 'on' : ''} onClick={() => setTab('details')}><IconListDetails size={14} />{t('inspector.details')}</button>
           <button role="tab" aria-selected={tab === 'file'} className={tab === 'file' ? 'on' : ''} onClick={() => setTab('file')}><IconFileText size={14} />{t('inspector.file')}</button>
         </div>
-        <button className="icon-btn push" aria-label={t('inspector.close')} onClick={closeInspector}><IconX size={16} /></button>
+        <span className="push"><CopyLink id={selectedTask && findTask(stage, selectedTask) ? selectedTask : stage.key} /></span>
+        <button className="icon-btn" aria-label={t('inspector.close')} onClick={closeInspector}><IconX size={16} /></button>
       </div>
       <div className="insp-scroll">
         {tab === 'file' ? (
@@ -293,14 +297,7 @@ export function Inspector({ stageKey }: { stageKey: string }) {
               <>
                 <div className="i-h"><span>{t('sessions.title')}</span></div>
                 <ul className="sessions">
-                  {[...(stage.sessions ?? [])].reverse().map((s) => (
-                    <li key={`${s.client}:${s.id}`}>
-                      <span className="who">{agentText(s.client, agents)}</span>
-                      <span className="grow" title={s.id}>{s.title || s.id}</span>
-                      <button className="icon-btn" title={t('sessions.copy')} aria-label={t('sessions.copy')} onClick={() => void navigator.clipboard.writeText(s.id)}><IconCopy size={13} /></button>
-                      {s.url && <button className="icon-btn" title={t('sessions.open')} aria-label={t('sessions.open')} onClick={() => void openSession(s.url as string)}><IconExternalLink size={13} /></button>}
-                    </li>
-                  ))}
+                  {[...(stage.sessions ?? [])].reverse().map((s) => <SessionRow key={`${s.client}:${s.id}`} s={s} onOpen={(u) => void openSession(u)} />)}
                 </ul>
               </>
             )}

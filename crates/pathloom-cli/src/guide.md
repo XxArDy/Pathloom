@@ -110,6 +110,7 @@ The user reads the plan as a picture, left to right. Follow these rules whenever
 6. `validate` after bigger changes.
 8. Capabilities `schedule` / `export_html` (read-only): `schedule` (MCP) or `pathloom schedule` gives start, finish, slack against `due` and the critical path from the stage `estimate` (days, default 1; set it with `apply` `stages[].estimate`, 0 clears). `parse_quick_add {text}` turns a sentence into a draft (title, stage, due, who) without writing; add the task with `apply`. `pathloom export html -o plan.html` writes a read-only page.
 7. Capabilities `agenda` / `digest` (read-only): `agenda {days?}` (MCP) or `pathloom today [--week]` lists overdue stages, stages due in the window, blocked stages and what waits for the owner; `pathloom digest [--since 24h] [--md]` adds what was done since and which agents went silent.
+9. Capability `links` (read-only): `make_link {id?}` (MCP) or `pathloom deeplink [ID]` returns `pathloom://open?project=...&stage=KEY&task=ID`; ID is a stage key or task id, omit it for the project. Put it in PRs and messages: a click opens the card in the Pathloom app.
 
 ## Spec example (`apply`)
 ```yaml

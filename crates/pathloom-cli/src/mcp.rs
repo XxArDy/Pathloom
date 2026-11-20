@@ -120,6 +120,12 @@ struct AgendaParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct MakeLinkParams {
+    /// Stage key (AUTH) or task id (AUTH-01); omit for a link to the project
+    id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct QuickAddParams {
     /// Plain words, English or Ukrainian: `add task "Fix login" to stage AUTH by friday`
     text: String,
@@ -584,6 +590,14 @@ impl PathloomServer {
     )]
     async fn schedule(&self) -> CallToolResult {
         finish(self.project().and_then(|p| crate::people::schedule(&p)))
+    }
+
+    #[tool(
+        description = "Deep link `pathloom://open?project=...&stage=KEY&task=ID` that opens the project, a stage or a task card in the Pathloom app. `id` is a stage key or task id; omit it for the project. Put it in messages and PRs so the user can jump to the card.",
+        annotations(read_only_hint = true)
+    )]
+    async fn make_link(&self, Parameters(a): Parameters<MakeLinkParams>) -> CallToolResult {
+        finish(self.project().and_then(|p| ops::make_link(&p, a.id.as_deref())))
     }
 
     #[tool(

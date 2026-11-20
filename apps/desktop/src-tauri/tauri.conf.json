@@ -24,6 +24,13 @@
       "csp": "default-src 'self'; img-src 'self' data: blob: plasset: http://plasset.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
     }
   },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["pathloom"]
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

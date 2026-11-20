@@ -3,10 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { IconCheck, IconX, IconRefresh } from '@tabler/icons-react';
 import type { StageView } from '@pathloom/canvas';
-import { api, errorText, fileUrl, isImageFile } from '../api';
+import { alreadyDecided, api, errorText, fileUrl, isImageFile } from '../api';
 import { refreshInbox } from '../agentSync';
 import { agentText, ago } from '../agents';
 import { useApp } from '../store';
+import i18n from '../i18n';
 
 const REASONS = ['off-theme', 'duplicate', 'quality', 'scale', 'wrong-place'] as const;
 
@@ -19,7 +20,13 @@ function useOwnerCall() {
   const [busy, setBusy] = useState(false);
   const run = async (p: Promise<StageView[]>) => {
     setBusy(true);
-    try { setStages(await p); await refreshInbox(); } catch (e) { set({ error: errorText(e) }); } finally { setBusy(false); }
+    try { setStages(await p); await refreshInbox(); } catch (e) {
+      const d = alreadyDecided(e);
+      if (!d) { set({ error: errorText(e) }); return; }
+      // First answer wins: show who decided and refresh the view instead of a raw error.
+      set({ error: i18n.t('approval.alreadyDecided', { by: d.by, at: new Date(d.at).toLocaleString() }) });
+      try { setStages(await api.stagesList()); await refreshInbox(); } catch { /* the watcher refreshes later */ }
+    } finally { setBusy(false); }
   };
   return { busy, run };
 }

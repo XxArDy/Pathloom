@@ -131,8 +131,11 @@ export interface StageView {
   /** Proof per done task id: the check that was run (exit code 0). */
   evidence?: Record<string, Evidence>;
   /** External sessions (other apps) that worked on this stage, oldest first. */
-  sessions?: { client: string; id: string; url?: string | null; title?: string | null }[];
+  sessions?: { client: string; id: string; url?: string | null; title?: string | null; state?: SessionState | null; state_at?: string | null }[];
 }
+
+/** Live state a client publishes for its session (m10 §Б1). */
+export type SessionState = 'working' | 'waiting' | 'blocked' | 'error' | 'done';
 
 export interface TaskInfo {
   note?: string;
@@ -149,6 +152,8 @@ export interface Evidence {
   exit_code: number;
   duration_ms?: number;
   commit?: string;
+  /** Git branch the check ran on. */
+  branch?: string;
   summary?: string;
   log?: string;
   at: string;
