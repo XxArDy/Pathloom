@@ -19,6 +19,8 @@ pub mod commits;
 mod fsutil;
 pub mod gitsrc;
 mod hash;
+mod history;
+mod interchange;
 mod indexkey;
 mod keygen;
 mod layout;
@@ -58,6 +60,7 @@ pub use session::{MAX_STAGE_SESSIONS, SessionRef, SessionState};
 pub use validate::Issue;
 pub use error::{Error, Result};
 pub use evidence::Evidence;
+pub use history::{HistoryEntry, HistoryFile};
 pub use import::ImportReport;
 pub use keygen::generate_key;
 pub use model::{

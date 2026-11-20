@@ -129,6 +129,8 @@ impl Project {
         let mut line = serde_json::to_string(&e).map_err(|e| crate::error::Error::InvalidSpec(e.to_string()))?;
         line.push('\n');
         std::fs::OpenOptions::new().create(true).append(true).open(&path)?.write_all(line.as_bytes())?;
+        drop(_lock);
+        let _ = self.record_history(&e); // history is best effort, like the log itself
         Ok(())
     }
 

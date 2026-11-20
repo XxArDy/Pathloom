@@ -278,7 +278,7 @@ fn project_info_protocol_capabilities_and_read_only() {
     let mut ro = Client::start(d.path(), &["--read-only"]);
     ro.handshake();
     let (_, v) = ro.call("project_info", json!({}));
-    assert_eq!(v["capabilities"], json!(["read", "activity", "events", "validate", "commits", "agenda", "digest", "approval_events", "task_events", "watch_filter", "schedule", "export_html"]));
+    assert_eq!(v["capabilities"], json!(["read", "activity", "events", "validate", "commits", "agenda", "digest", "approval_events", "task_events", "watch_filter", "schedule", "export_html", "export"]));
     let (err, v) = ro.call("list_commits", json!({}));
     assert!(!err, "{v}");
     assert!(v["commits"].is_array());
@@ -580,4 +580,28 @@ fn client_answers_forbidden_then_allowed_and_first_wins() {
     let mut r = Client::start(d.path(), &["--read-only"]);
     r.handshake();
     assert_eq!(r.call("answer_decision", json!({"task_id": "DECIDE-01", "choice": "x", "human": "alice"})).1["code"], "READ_ONLY");
+}
+
+#[test]
+fn export_import_and_revert_tools() {
+    let d = project();
+    let mut c = Client::start(d.path(), &[]);
+    c.handshake();
+    let (err, v) = c.call("import_tasks", json!({"format": "csv", "text": "Name,Status\nWrite docs,Done\nShip,Todo\n"}));
+    assert!(!err, "{v}");
+    let (_, v) = c.call("export_plan", json!({"format": "md"}));
+    assert!(v["text"].as_str().unwrap().contains("- [x] Write docs"), "{v}");
+    assert!(c.call("export_plan", json!({"format": "pdf"})).0);
+    let (_, h) = c.call("list_history", json!({}));
+    let id = h["entries"][0]["id"].as_str().unwrap().to_string();
+    let (err, v) = c.call("revert_change", json!({"id": id}));
+    assert!(!err, "{v}");
+    let (_, v) = c.call("export_plan", json!({"format": "csv"}));
+    assert_eq!(v["text"].as_str().unwrap().lines().count(), 1); // header only
+    let (err, v) = c.call("revert_change", json!({"id": id}));
+    assert!(err && v["code"] == "CONFLICT", "{v}");
+    let mut ro = Client::start(d.path(), &["--read-only"]);
+    ro.handshake();
+    assert!(!ro.call("list_history", json!({})).0);
+    assert_eq!(ro.call("revert_change", json!({"id": id})).1["code"], "READ_ONLY");
 }

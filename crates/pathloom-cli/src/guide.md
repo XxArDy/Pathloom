@@ -73,7 +73,8 @@ The user reads the plan as a picture, left to right. Follow these rules whenever
   hex; evidence = up to 10 paths/links) shows the delivery pipeline on the task card and counts as a heartbeat.
 - `evidence.commit` (7-40 hex sha) ties a check to the commit it ran on. `list_commits {stage?, limit?}` returns git
   commits whose subject starts with a stage or task id (`AUTH-02: ...`, `AUTH-02, 03: ...`, `AUTH: ...`).
-- `import_tasks {format: "spec-kit", text}` turns a Spec Kit `tasks.md` into stages (phases), tasks and dependencies.
+- `import_tasks {format: "spec-kit", text}` turns a Spec Kit `tasks.md` into stages (phases), tasks and dependencies. Other formats: `md`, `csv`, `notion`, `trello`; `dry_run` / `propose` as for `apply`.
+- `export_plan {format: "md"|"csv"|"github"}` returns the plan as text. `list_history` / `revert_change {id}` list and undo one logged change (CONFLICT when its files changed since).
 
 ## Identity and sessions
 - `register_agent {name?, color?, avatar?, kind?}` sets your own display profile (id = your caller name; `name` up to 40 chars, `color` `#rgb`/`#rrggbb`,

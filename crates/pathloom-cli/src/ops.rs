@@ -41,6 +41,7 @@ impl From<Error> for ApiError {
             Error::Cycle(nodes) => ("CYCLE", json!({"nodes": nodes})),
             Error::DuplicateKey(k) => ("DUPLICATE_KEY", json!({"key": k})),
             Error::Conflict { key } => ("CONFLICT", json!({"key": key})),
+            Error::HistoryConflict { id, paths } => ("CONFLICT", json!({"id": id, "paths": paths})),
             Error::Claimed { task_id, by, expires_at } => {
                 ("CLAIMED", json!({"task_id": task_id, "by": by, "expires_at": expires_at}))
             }
@@ -841,17 +842,54 @@ pub fn usage_summary(p: &Project) -> ApiResult<Value> {
     Ok(to_v(&p.usage_summary()?))
 }
 
-/// Import another tool's task list (`spec-kit`) through the normal apply path (review mode respected).
-pub fn import(
+/// `export_plan`: the plan as `md`, `csv` or `github` (issues JSON) text. Read-only.
+pub fn export_plan(p: &Project, format: &str) -> ApiResult<Value> {
+    let text = match format {
+        "md" | "markdown" => p.export_markdown()?,
+        "csv" => p.export_csv()?,
+        "github" => p.export_github_issues()?,
+        "html" => p.export_html(&pathloom_core::now_rfc3339())?,
+        _ => return Err(ApiError::new("INVALID_SPEC", format!("unknown export format `{format}` (md, csv, github, html)"))),
+    };
+    Ok(json!({"format": format, "text": text}))
+}
+
+/// Import `text` in `format` (`spec-kit` | `md` | `csv` | `trello` | `notion`) through the normal apply path.
+#[allow(clippy::too_many_arguments)]
+pub fn import_as(
     p: &Project,
     a: &Actor,
+    format: &str,
     text: &str,
     prefix: Option<&str>,
     board: Option<&str>,
     dry_run: bool,
     direct: bool,
+    propose: bool,
 ) -> ApiResult<Value> {
-    let (mut spec, report) = p.import_spec_kit(text, prefix)?;
+    let (mut spec, report) = match format {
+        "spec-kit" => {
+            let (s, r) = p.import_spec_kit(text, prefix)?;
+            (s, to_v(&r))
+        }
+        "md" | "markdown" | "csv" | "trello" | "notion" => {
+            let s = match format {
+                "csv" => p.import_csv(text)?,
+                "trello" => p.import_trello(text)?,
+                "notion" => p.import_notion(text)?,
+                _ => p.import_markdown(text)?,
+            };
+            let keys: Vec<&str> = s.stages.iter().filter_map(|x| x.id.as_deref()).collect();
+            let tasks: usize = s.stages.iter().map(|x| x.tasks.len()).sum();
+            (s.clone(), json!({"format": format, "feature": "", "stages": keys, "tasks": tasks}))
+        }
+        _ => {
+            return Err(ApiError::new(
+                "INVALID_SPEC",
+                format!("unknown format `{format}` (supported: spec-kit, md, csv, trello, notion)"),
+            ));
+        }
+    };
     spec.board = board.map(String::from);
     // Same policy as an agent's `apply`: imported `[x]` tasks need evidence / go to review (`direct` = owner override).
     let enforce = !dry_run && !direct;
@@ -859,12 +897,29 @@ pub fn import(
         let done: Vec<String> = spec.stages.iter().flat_map(|s| s.tasks_done.iter().cloned()).collect();
         require_no_evidence_policy(p, &done)?;
     }
-    let apply_now = enforce && p.config.agent_changes == pathloom_core::AgentChanges::Auto;
+    let apply_now = enforce && !propose && p.config.agent_changes == pathloom_core::AgentChanges::Auto;
     let diverted = if apply_now { divert_done_to_review(p, &mut spec)? } else { vec![] };
-    let mut v = submit(p, &spec, &a.name, dry_run, direct)?;
+    let mut v = submit_with(p, &spec, &a.name, dry_run, direct, propose)?;
     v = review_diverted(p, a, &diverted, v)?;
-    v["import"] = to_v(&report);
+    v["import"] = report;
     Ok(log_submit(p, a, "import", &spec, v))
+}
+
+/// Change history, newest first: `{entries: [{id, at, action, files: [path]}]}`. `limit` 0 = 20, max 200.
+pub fn history(p: &Project, limit: usize) -> ApiResult<Value> {
+    let limit = if limit == 0 { 20 } else { limit.min(200) };
+    let entries: Vec<Value> = p
+        .history(limit)?
+        .into_iter()
+        .map(|e| json!({"id": e.id, "at": e.at, "action": e.action, "files": e.files.iter().map(|f| &f.path).collect::<Vec<_>>()}))
+        .collect();
+    Ok(json!({"entries": entries}))
+}
+
+/// Undo one history entry (`CONFLICT` with the paths when files changed since). Logged as `revert`.
+pub fn revert_change(p: &Project, a: &Actor, id: &str) -> ApiResult<Value> {
+    let e = p.revert(id, &a.name, a.source)?;
+    Ok(json!({"reverted": e.id, "action": e.action, "files": e.files.iter().map(|f| &f.path).collect::<Vec<_>>()}))
 }
 
 /// Latest log entries, newest first. `limit` 0 = 20, max 200.

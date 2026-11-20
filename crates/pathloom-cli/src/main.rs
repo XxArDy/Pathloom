@@ -421,20 +421,51 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
                 out.join("\n")
             });
         }
-        Cmd::Import { format: _, file, prefix, board, dry_run, direct } => {
+        Cmd::Import { format, file, prefix, board, dry_run, direct, propose } => {
             let p = open(cli)?;
-            let v = ops::import(&p, &actor, &read_spec_text(file)?, prefix.as_deref(), board.as_deref(), *dry_run, *direct)?;
+            let v = ops::import_as(&p, &actor, format.name(), &read_spec_text(file)?, prefix.as_deref(), board.as_deref(), *dry_run, *direct, *propose)?;
             emit(cli, &v, || {
                 let i = &v["import"];
-                format!(
-                    "Spec Kit \"{}\": {} stage(s) {}, {} task(s)\n{}",
-                    s(i, "feature"),
-                    list(i, "stages").len(),
-                    list(i, "stages").join(", "),
-                    i["tasks"],
-                    fmt_submit(&v)
-                )
+                let what = if s(i, "feature").is_empty() { s(i, "format").to_string() } else { format!("Spec Kit \"{}\"", s(i, "feature")) };
+                format!("{what}: {} stage(s) {}, {} task(s)
+{}", list(i, "stages").len(), list(i, "stages").join(", "), i["tasks"], fmt_submit(&v))
             });
+        }
+        Cmd::Export(sub) => {
+            let (fmt, out) = match sub {
+                ExportCmd::Md(o) => ("md", o),
+                ExportCmd::Csv(o) => ("csv", o),
+                ExportCmd::Github(o) => ("github", o),
+                ExportCmd::Html(o) => ("html", o),
+            };
+            let v = ops::export_plan(&open(cli)?, fmt)?;
+            let text = s(&v, "text");
+            match &out.output {
+                Some(path) => {
+                    pathloom_core::write_file_atomic(path, text.as_bytes())
+                        .map_err(|e| ApiError::new("IO_ERROR", format!("cannot write {}: {e}", path.display())))?;
+                    emit(cli, &json!({"format": fmt, "path": path.to_string_lossy()}), || format!("Wrote {}", path.display()));
+                }
+                None => print!("{text}"),
+            }
+        }
+        Cmd::History { limit } => {
+            let v = ops::history(&open(cli)?, *limit)?;
+            emit(cli, &v, || {
+                let rows: Vec<String> = v["entries"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|e| format!("{}  {}  {:<10} {}", s(e, "id"), s(e, "at"), s(e, "action"), list(e, "files").join(", ")))
+                    .collect();
+                if rows.is_empty() { "No history yet.".into() } else { rows.join("
+") }
+            });
+        }
+        Cmd::Revert { id } => {
+            let p = open(cli)?;
+            let v = ops::revert_change(&p, &actor, id)?;
+            emit(cli, &v, || format!("Reverted {id} ({})", s(&v, "action")));
         }
         Cmd::Task(TaskCmd::Release { task_id, force }) => {
             let v = ops::release_task(&open(cli)?, &actor, task_id, *force)?;
@@ -675,16 +706,6 @@ not applied (see result)." } else { "
         Cmd::Schedule => {
             let v = people::schedule(&open(cli)?)?;
             emit(cli, &v, || people::schedule_table(&v));
-        }
-        Cmd::Export(ExportCmd::Html { output }) => {
-            let html = people::export_html(&open(cli)?)?;
-            match output {
-                Some(f) => {
-                    pathloom_core::write_file_atomic(f, html.as_bytes()).map_err(|e| ApiError::new("IO_ERROR", format!("cannot write {}: {e}", f.display())))?;
-                    emit(cli, &json!({"file": f.display().to_string()}), || format!("Wrote {}", f.display()));
-                }
-                None => print!("{html}"),
-            }
         }
         Cmd::Today { week } => {
             let v = agenda::agenda(&open(cli)?, if *week { 7 } else { 1 })?;

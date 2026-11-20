@@ -53,7 +53,3 @@ pub fn schedule_table(v: &Value) -> String {
     }
     out + &format!("project finish: {}", v["finish"].as_str().unwrap_or(""))
 }
-
-pub fn export_html(p: &Project) -> ApiResult<String> {
-    Ok(p.export_html(&pathloom_core::now_rfc3339())?)
-}

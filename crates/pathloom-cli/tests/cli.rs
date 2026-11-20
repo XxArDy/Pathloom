@@ -692,3 +692,41 @@ fn add_schedule_and_export_html() {
     let html = std::fs::read_to_string(out).unwrap();
     assert!(html.contains("Fix &lt;login&gt;") && html.contains("<svg") && !html.contains("<login>"), "{html}");
 }
+
+#[test]
+fn export_import_history_and_revert() {
+    let p = Proj::new();
+    let f = p.dir.path().join("spec.yaml");
+    std::fs::write(&f, SPEC).unwrap();
+    assert!(p.run(&["apply", f.to_str().unwrap()]).status.success());
+
+    let md = String::from_utf8(p.run(&["export", "md"]).stdout).unwrap();
+    assert!(md.contains("## A: Alpha") && md.contains("- [ ] two") && md.contains("Depends: A"), "{md}");
+    let csv_path = p.dir.path().join("plan.csv");
+    assert!(p.run(&["export", "csv", "-o", csv_path.to_str().unwrap()]).status.success());
+    assert!(std::fs::read_to_string(&csv_path).unwrap().starts_with("stage_id,stage_title,"));
+    let gh: Value = serde_json::from_slice(&p.run(&["export", "github"]).stdout).unwrap();
+    assert_eq!(gh.as_array().unwrap().len(), 2);
+
+    // import with dry-run writes nothing, then for real (new stage keys, no collision with A and B)
+    let mdf = p.dir.path().join("in.md");
+    std::fs::write(&mdf, "## Launch\n- [x] announce\n- [ ] celebrate\n").unwrap();
+    let v = p.json(&["import", "md", mdf.to_str().unwrap(), "--dry-run"]);
+    assert_eq!(v["mode"], "dry_run");
+    assert_eq!(p.json(&["stage", "list"])["stages"].as_array().unwrap().len(), 2);
+    let v = p.json(&["import", "md", mdf.to_str().unwrap()]);
+    assert_eq!(v["mode"], "applied");
+    assert_eq!(p.json(&["stage", "list"])["stages"].as_array().unwrap().len(), 3);
+
+    // history lists the import; reverting removes the stage again
+    let h = p.json(&["history"]);
+    assert_eq!(h["entries"][0]["action"], "import");
+    let id = h["entries"][0]["id"].as_str().unwrap().to_string();
+    assert!(p.run(&["revert", &id]).status.success());
+    assert_eq!(p.json(&["stage", "list"])["stages"].as_array().unwrap().len(), 2);
+    assert_eq!(p.json(&["history"])["entries"][0]["action"], "revert");
+    // the old entry cannot be reverted twice any more: files no longer equal "after"
+    let o = p.run(&["--json", "revert", &id]);
+    assert!(!o.status.success());
+    assert!(String::from_utf8_lossy(&o.stderr).contains("CONFLICT"));
+}
