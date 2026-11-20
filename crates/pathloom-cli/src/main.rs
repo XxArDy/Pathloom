@@ -4,6 +4,7 @@ mod cli;
 mod mcp;
 mod ops;
 mod schema;
+mod telegram;
 
 use clap::Parser;
 use cli::{AgentCmd, ApprovalCmd, BoardCmd, DecisionCmd, Cli, Cmd, GateCmd, ProposalCmd, SkillCmd, StageCmd, TaskCmd};
@@ -593,6 +594,7 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
                 });
             }
         }
+        Cmd::Telegram => telegram::run(&open(cli)?)?,
         Cmd::Inbox => {
             let v = ops::inbox(&open(cli)?)?;
             emit(cli, &v, || {

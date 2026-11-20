@@ -50,7 +50,7 @@ pub use evidence::Evidence;
 pub use import::ImportReport;
 pub use keygen::generate_key;
 pub use model::{
-    AgentChanges, Board, Comment, Dep, GitConfig, Priority, ProjectConfig, Stage, StageKind, StageMeta, StageView, Status,
+    AgentChanges, Board, Comment, Dep, GitConfig, Priority, ProjectConfig, Stage, TelegramConfig, StageKind, StageMeta, StageView, Status,
     Approval, ApprovalState, DecisionOption, InboxKind, Task, TaskDecision, TaskInfo, TaskKind, Who,
 };
 pub use approvals::{ApprovalView, DecisionView, InboxItem};

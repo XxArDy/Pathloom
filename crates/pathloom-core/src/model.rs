@@ -415,9 +415,19 @@ pub struct ProjectConfig {
     /// Optional git settings (`[git]` table); absent in old files.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git: Option<GitConfig>,
+    /// Optional Telegram approval bridge (`[telegram]` table); the bot token comes from the environment only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub telegram: Option<TelegramConfig>,
     /// Agents (MCP) cannot close tasks: `done` puts them in review until the owner approves.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub require_approval: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct TelegramConfig {
+    /// Chat that receives approval requests and may answer them.
+    pub chat_id: String,
 }
 
 fn default_fetch_interval() -> u64 {
@@ -462,6 +472,10 @@ mod tests {
         let c: ProjectConfig = toml::from_str(&format!("{old}[git]\nread_ref = \"origin/main\"\n")).unwrap();
         let g = c.git.unwrap();
         assert_eq!((g.read_ref.as_deref(), g.fetch_interval_secs), (Some("origin/main"), 120));
+        let c: ProjectConfig = toml::from_str(&format!("{old}[telegram]
+chat_id = \"123\"
+")).unwrap();
+        assert_eq!(c.telegram.unwrap().chat_id, "123");
     }
 
     #[test]

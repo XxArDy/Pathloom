@@ -99,6 +99,7 @@ impl Project {
             agent_changes: AgentChanges::Auto,
             require_evidence: false,
             git: None,
+            telegram: None,
             require_approval: false,
         };
         let text = toml::to_string(&config).map_err(|e| parse_err(&cfg_path, e))?;

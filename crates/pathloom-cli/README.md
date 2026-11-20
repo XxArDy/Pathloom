@@ -95,6 +95,15 @@ With `agent_changes = "review"` in `.pathloom/project.toml`, commands that chang
 a human accepts it (`pathloom proposals accept <id>` or in the app). `--direct` bypasses review.
 `task done/undo` and `comment` always write directly.
 
+## Telegram approvals
+
+`pathloom telegram` sends every pending approval (image previews plus a message with ✅ / ❌ buttons) to a Telegram chat and
+records the answer like `pathloom approval approve|reject` (❌ asks for a reason chip first).
+
+1. Create a bot with @BotFather and set its token in the environment: `PATHLOOM_TELEGRAM_TOKEN=...` (never stored in the project).
+2. Add your chat id to `.pathloom/project.toml`: `[telegram]` / `chat_id = "123456789"`.
+3. Run `pathloom telegram` and keep it running. Updates from other chats are ignored. Progress is kept in `.pathloom/telegram.json`.
+
 ## MCP server
 
 ```
