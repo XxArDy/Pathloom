@@ -120,6 +120,12 @@ struct AgendaParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct QuickAddParams {
+    /// Plain words, English or Ukrainian: `add task "Fix login" to stage AUTH by friday`
+    text: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct SearchParams {
     /// Case-insensitive text to find in keys, titles, descriptions and task titles
     query: String,
@@ -507,6 +513,22 @@ impl PathloomServer {
     )]
     async fn activity(&self, Parameters(a): Parameters<ActivityParams>) -> CallToolResult {
         finish(self.project().and_then(|p| ops::activity(&p, a.limit.unwrap_or(0), a.stage.as_deref())))
+    }
+
+    #[tool(
+        description = "Parse a quick-add sentence (en/uk) into a draft {title, stage, due, who, unmatched} against this plan's stages. Read-only: nothing is created; use `apply` to add the task.",
+        annotations(read_only_hint = true)
+    )]
+    async fn parse_quick_add(&self, Parameters(a): Parameters<QuickAddParams>) -> CallToolResult {
+        finish(self.project().and_then(|p| crate::people::parse(&p, &a.text)))
+    }
+
+    #[tool(
+        description = "Schedule from today over hard dependencies: start, finish, slack against `due`, float and critical path per stage (stage `estimate` in days, default 1; done stages take 0).",
+        annotations(read_only_hint = true)
+    )]
+    async fn schedule(&self) -> CallToolResult {
+        finish(self.project().and_then(|p| crate::people::schedule(&p)))
     }
 
     #[tool(

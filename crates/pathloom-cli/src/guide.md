@@ -93,6 +93,7 @@ The user reads the plan as a picture, left to right. Follow these rules whenever
    (`{"AUTH": "<hash>"}`). A changed file gives `CONFLICT`: re-read and retry.
 5. `layout_board` only when asked or after adding many cards; it moves cards. Use `only_new` to keep the rest still.
 6. `validate` after bigger changes.
+8. Capabilities `schedule` / `export_html` (read-only): `schedule` (MCP) or `pathloom schedule` gives start, finish, slack against `due` and the critical path from the stage `estimate` (days, default 1; set it with `apply` `stages[].estimate`, 0 clears). `parse_quick_add {text}` turns a sentence into a draft (title, stage, due, who) without writing; add the task with `apply`. `pathloom export html -o plan.html` writes a read-only page.
 7. Capabilities `agenda` / `digest` (read-only): `agenda {days?}` (MCP) or `pathloom today [--week]` lists overdue stages, stages due in the window, blocked stages and what waits for the owner; `pathloom digest [--since 24h] [--md]` adds what was done since and which agents went silent.
 
 ## Spec example (`apply`)

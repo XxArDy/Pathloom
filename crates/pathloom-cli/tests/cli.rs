@@ -603,3 +603,26 @@ fn today_and_digest_json() {
     assert!(md.starts_with("## Digest ") && md.contains("### Overdue"), "{md}");
     assert!(!p.run(&["digest", "--since", "nope"]).status.success());
 }
+
+#[test]
+fn add_schedule_and_export_html() {
+    let p = Proj::new();
+    let spec = "stages:\n  - {id: AUTH, title: Authorization, estimate: 3, tasks: [a]}\n  - {id: UI, title: Interface, depends: [AUTH], tasks: [b]}\n";
+    let f = p.dir.path().join("spec.yaml");
+    std::fs::write(&f, spec).unwrap();
+    assert!(p.run(&["apply", f.to_str().unwrap()]).status.success());
+    let d = p.json(&["add", "add task \"Fix <login>\" to stage auth tomorrow for me"]);
+    assert_eq!((d["title"].as_str(), d["stage"].as_str(), d["applied"].as_bool()), (Some("Fix <login>"), Some("AUTH"), Some(false)));
+    assert!(p.run(&["add", "do it", "--yes"]).status.code() != Some(0), "no stage must fail");
+    let d = p.json(&["add", "add task \"Fix <login>\" to stage auth tomorrow", "--yes"]);
+    assert_eq!(d["applied"], true, "{d}");
+    assert!(d["due"].is_string());
+    let s = p.json(&["schedule"]);
+    let item = |k: &str| s["items"].as_array().unwrap().iter().find(|i| i["key"] == k).unwrap().clone();
+    assert_eq!((item("AUTH")["estimate"].as_u64(), item("UI")["critical"].as_bool()), (Some(3), Some(true)));
+    assert!(item("AUTH")["slack"].is_i64());
+    let out = p.dir.path().join("plan.html");
+    assert!(p.run(&["export", "html", "-o", out.to_str().unwrap()]).status.success());
+    let html = std::fs::read_to_string(out).unwrap();
+    assert!(html.contains("Fix &lt;login&gt;") && html.contains("<svg") && !html.contains("<login>"), "{html}");
+}

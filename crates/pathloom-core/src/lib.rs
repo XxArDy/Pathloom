@@ -9,6 +9,9 @@ mod board;
 mod claims;
 mod error;
 mod evidence;
+mod export;
+mod quickadd;
+mod schedule;
 mod import;
 pub mod events;
 pub mod commits;
@@ -59,6 +62,9 @@ pub use model::{
     Approval, ApprovalState, DecisionOption, InboxKind, Task, TaskDecision, TaskInfo, TaskKind, Who,
 };
 pub use agenda::{Agenda, AgendaItem, Digest, SilentClaim, Stuck, add_days, date_to_days, days_to_date, today_utc};
+pub use export::html_escape;
+pub use quickadd::{Draft, parse as parse_quick_add};
+pub use schedule::{Schedule, ScheduleItem};
 pub use approvals::{ApprovalView, DecisionView, InboxItem};
 pub use project::Project;
 pub use stagefile::is_valid_key;

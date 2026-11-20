@@ -6,13 +6,13 @@ pub const PROTOCOL: &str = "pathloom/1";
 /// What this build supports. A read-only server keeps only the non-mutating capabilities.
 pub fn capabilities(read_only: bool) -> Vec<&'static str> {
     if read_only {
-        vec!["read", "activity", "events", "validate", "commits", "agenda", "digest"]
+        vec!["read", "activity", "events", "validate", "commits", "agenda", "digest", "schedule", "export_html"]
     } else {
         vec![
             "read", "apply", "proposals", "claims", "activity", "agents", "events", "sessions", "layout", "validate",
             "evidence", "heartbeat", "import", "artifacts", "usage", "gates",
             "propose", "approvals", "review", "decisions", "inbox",
-            "templates", "delegation", "task_status", "evidence_commit", "commits", "usage_tasks", "usage_quota", "agenda", "digest",
+            "templates", "delegation", "task_status", "evidence_commit", "commits", "usage_tasks", "usage_quota", "agenda", "digest", "schedule", "export_html",
         ]
     }
 }
@@ -32,6 +32,7 @@ mod tests {
         for c in ["templates", "delegation", "task_status", "evidence_commit", "usage_tasks", "usage_quota"] {            assert!(rw.contains(&c) && !ro.contains(&c), "{c}");
         }
         assert!(ro.contains(&"commits") && ro.contains(&"agenda") && ro.contains(&"digest"));
+        assert!(ro.contains(&"schedule") && ro.contains(&"export_html"));
         assert_eq!(PROTOCOL, "pathloom/1");
     }
 }
