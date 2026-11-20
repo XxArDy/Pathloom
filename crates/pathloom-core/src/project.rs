@@ -98,6 +98,7 @@ impl Project {
             plan_dir: plan_dir.into(),
             agent_changes: AgentChanges::Auto,
             require_evidence: false,
+            git: None,
         };
         let text = toml::to_string(&config).map_err(|e| parse_err(&cfg_path, e))?;
         write_atomic(&cfg_path, text.as_bytes())?;
