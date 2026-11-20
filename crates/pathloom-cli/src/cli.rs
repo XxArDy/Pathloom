@@ -129,6 +129,18 @@ pub enum Cmd {
     },
     /// What waits for the owner: pending approvals, open decisions, open owner tasks
     Inbox,
+    /// Quick add in plain words: `pathloom add "add task X to stage AUTH by friday" [--yes]`
+    Add {
+        text: String,
+        /// Apply the parsed draft (without it only the draft is printed)
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Dates, slack and the critical path of the plan
+    Schedule,
+    /// Export the plan
+    #[command(subcommand)]
+    Export(ExportCmd),
     /// Overdue, due today (or within 7 days with --week), blocked, and what waits for you
     Today {
         #[arg(long)]
@@ -543,5 +555,14 @@ pub enum ProposalCmd {
         id: String,
         #[arg(long)]
         comment: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ExportCmd {
+    /// One self-contained read-only HTML file (stdout without -o)
+    Html {
+        #[arg(short, long, value_name = "FILE")]
+        output: Option<PathBuf>,
     },
 }

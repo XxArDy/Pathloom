@@ -4,9 +4,9 @@ title: "Custom: sections"
 kind: milestone
 who: both
 priority: low
+estimate: 5
 owner: {name: Ann, team: core}
 labels: [a, b c, 3]
-estimate: 5
 ---
 Intro paragraph.
 

@@ -3,13 +3,14 @@
 mod agenda;
 mod cli;
 mod mcp;
+mod people;
 mod ops;
 mod schema;
 mod telegram;
 mod tpl;
 
 use clap::Parser;
-use cli::{AgentCmd, ApprovalCmd, BoardCmd, DecisionCmd, Cli, Cmd, GateCmd, ProposalCmd, SessionCmd, SkillCmd, StageCmd, TaskCmd, TemplateCmd};
+use cli::{ExportCmd, AgentCmd, ApprovalCmd, BoardCmd, DecisionCmd, Cli, Cmd, GateCmd, ProposalCmd, SessionCmd, SkillCmd, StageCmd, TaskCmd, TemplateCmd};
 use ops::{ApiError, ApiResult};
 use pathloom_core::events::{Event, EventFilter, EventWatcher, passes};
 use pathloom_core::{ApplySpec, DepSpec, Place, Project, SessionRef, StageSpec};
@@ -646,6 +647,43 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
                         .collect();
                     if rows.is_empty() { "No decisions.".into() } else { rows.join("\n") }
                 });
+            }
+        }
+        Cmd::Add { text, yes } => {
+            let v = people::add(&open(cli)?, text, *yes, &cli.author)?;
+            emit(cli, &v, || {
+                let f = |k: &str| v[k].as_str().unwrap_or("-").to_string();
+                let who = v["who"].as_str().unwrap_or("-");
+                let mut t = format!("title: {}
+stage: {}
+due:   {}
+who:   {who}", f("title"), f("stage"), f("due"));
+                if let Some(u) = v["unmatched"].as_array().filter(|u| !u.is_empty()) {
+                    t += &format!("
+not understood: {}", u.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", "));
+                }
+                if let Some(n) = v["note"].as_str() {
+                    t += &format!("
+note: {n}");
+                }
+                t + if v["applied"] == true { "
+added." } else if *yes { "
+not applied (see result)." } else { "
+(draft only; add --yes to apply)" }
+            });
+        }
+        Cmd::Schedule => {
+            let v = people::schedule(&open(cli)?)?;
+            emit(cli, &v, || people::schedule_table(&v));
+        }
+        Cmd::Export(ExportCmd::Html { output }) => {
+            let html = people::export_html(&open(cli)?)?;
+            match output {
+                Some(f) => {
+                    pathloom_core::write_file_atomic(f, html.as_bytes()).map_err(|e| ApiError::new("IO_ERROR", format!("cannot write {}: {e}", f.display())))?;
+                    emit(cli, &json!({"file": f.display().to_string()}), || format!("Wrote {}", f.display()));
+                }
+                None => print!("{html}"),
             }
         }
         Cmd::Today { week } => {

@@ -211,6 +211,7 @@ impl Stage {
             evidence: std::collections::BTreeMap::new(),
             artifacts: vec![],
             check: None,
+            estimate: None,
             task_info: std::collections::BTreeMap::new(),
             extra: Map::new(),
             layout: Layout::default(),
@@ -371,6 +372,9 @@ pub struct Stage {
     /// `kind: gate`: the command that must pass (exit code 0) for the gate to be done, e.g. `npm test`.
     #[serde(default)]
     pub check: Option<String>,
+    /// Planned duration in days (frontmatter `estimate`); absent = 1 in the schedule.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimate: Option<u32>,
     /// Per task id: a free note and attached files (project-relative paths or links).
     #[serde(default)]
     pub task_info: std::collections::BTreeMap<String, TaskInfo>,
@@ -467,6 +471,8 @@ pub struct StageMeta {
     pub branch: Option<String>,
     /// Gate command; empty string clears.
     pub check: Option<String>,
+    /// Days; 0 clears.
+    pub estimate: Option<u32>,
 }
 
 #[cfg(test)]

@@ -39,6 +39,9 @@ pathloom decision ask <ID> --question Q --option "label|description"... [--recom
 pathloom decisions [--md]   # all decisions; --md = answered ones as Markdown
 pathloom inbox [--json]     # what waits for the owner: pending approvals, open decisions, owner tasks
 pathloom today [--week] [--json]   # overdue, due today (7 days with --week), blocked, waiting for you
+pathloom add "add task X to stage AUTH by friday" [--yes] [--json]   # quick add (en/uk): prints the parsed draft; --yes adds the task (a due date goes to the stage only if it has none; the assignee is shown, not stored)
+pathloom schedule [--json]  # start/finish from today over hard deps, slack vs due, critical path (*); stage `estimate` in days, default 1
+pathloom export html [-o FILE]   # one self-contained read-only HTML page (no scripts, no external URLs); stdout without -o
 pathloom digest [--since 24h|7d|RFC3339] [--md] [--json]   # done since, stuck (blocked/overdue/silent agents), waiting
 # `require on`: agents (MCP) cannot close tasks, `set_task done` puts them in review; the human CLI is not limited
 pathloom agent set <id> [--name N] [--color #rrggbb] [--avatar 🤖|assets/f.png] [--kind K] | list | remove <id>

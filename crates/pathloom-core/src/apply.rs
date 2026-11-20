@@ -95,6 +95,9 @@ pub struct StageSpec {
     #[serde(deserialize_with = "lenient_opt", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<String>")]
     pub branch: Option<String>,
+    /// Planned days for the schedule; 0 clears.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub estimate: Option<u32>,
     /// Full replacement of the stage's dependencies when present.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub depends: Option<Vec<DepSpec>>,
@@ -363,6 +366,9 @@ impl Project {
             }
             if let Some(b) = &ss.branch {
                 st.branch = opt_clear(b);
+            }
+            if let Some(e) = ss.estimate {
+                st.estimate = (e > 0).then_some(e);
             }
             if let Some(list) = &ss.depends {
                 let mut deps: Vec<Dep> = Vec::new();

@@ -18,9 +18,9 @@ pub fn stage_key_of(task_id: &str) -> &str {
     task_id.split('-').next().unwrap_or("")
 }
 
-const KNOWN: [&str; 15] = [
+const KNOWN: [&str; 16] = [
     "id", "title", "kind", "who", "due", "priority", "branch", "pr", "tags", "depends", "sessions", "evidence", "artifacts",
-    "check", "task_info",
+    "check", "task_info", "estimate",
 ];
 
 fn opt_str(m: &Map<String, Value>, k: &str) -> Option<String> {
@@ -74,6 +74,7 @@ impl Stage {
             st.artifacts = a.iter().filter_map(scalar_str).collect();
         }
         st.check = opt_str(&map, "check");
+        st.estimate = opt_str(&map, "estimate").and_then(|e| e.trim().parse().ok());
         if let Some(Value::Array(a)) = map.get("depends") {
             for d in a {
                 let dep = match d {
@@ -190,6 +191,9 @@ impl Stage {
         }
         if let Some(c) = &self.check {
             line("check", &scalar(c, false));
+        }
+        if let Some(e) = self.estimate {
+            line("estimate", &e.to_string());
         }
         if !self.artifacts.is_empty() {
             let a: Vec<String> = self.artifacts.iter().map(|x| scalar(x, false)).collect();

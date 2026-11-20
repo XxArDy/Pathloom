@@ -389,6 +389,9 @@ impl Project {
             if let Some(c) = meta.check {
                 s.check = opt(c.replace(['\r', '\n'], " "));
             }
+            if let Some(e) = meta.estimate {
+                s.estimate = (e > 0).then_some(e);
+            }
             Ok(())
         })
     }
