@@ -3,10 +3,17 @@
 /// Major version of the file and MCP contract. Breaking changes bump it to `pathloom/2`.
 pub const PROTOCOL: &str = "pathloom/1";
 
-/// What this build supports. A read-only server keeps only the non-mutating capabilities.
+/// What a read-only server still serves (its reading tools: `list_proposals`, `get_approvals`,
+/// `list_decisions`, `list_history`, `list_templates`, `parse_quick_add`, ...).
+const READ_ONLY: [&str; 20] = [
+    "read", "activity", "events", "validate", "commits", "agenda", "digest", "approval_events", "task_events", "watch_filter",
+    "schedule", "export_html", "export", "links", "approvals", "decisions", "proposals", "history", "templates", "quick_add",
+];
+
+/// What this build supports. A read-only server keeps only [`READ_ONLY`].
 pub fn capabilities(read_only: bool) -> Vec<&'static str> {
     if read_only {
-        vec!["read", "activity", "events", "validate", "commits", "agenda", "digest", "approval_events", "task_events", "watch_filter", "schedule", "export_html", "export", "links"]
+        READ_ONLY.to_vec()
     } else {
         vec![
             "read", "apply", "proposals", "claims", "activity", "agents", "events", "sessions", "layout", "validate",
@@ -16,6 +23,7 @@ pub fn capabilities(read_only: bool) -> Vec<&'static str> {
             "session_state", "approval_events", "task_events", "evidence_branch", "watch_filter",
             "schedule", "export_html",
             "export", "import_formats", "history", "links",
+            "client_answers", "quick_add", "telegram",
         ]
     }
 }
@@ -29,20 +37,15 @@ mod tests {
         let rw = capabilities(false);
         let ro = capabilities(true);
         assert!(ro.iter().all(|c| rw.contains(c)));
-        for mutating in ["templates", "apply", "proposals", "claims", "agents", "sessions", "layout", "evidence", "heartbeat", "import", "usage", "gates", "propose", "approvals", "review", "decisions", "inbox"] {
+        for mutating in [
+            "apply", "claims", "agents", "sessions", "layout", "evidence", "heartbeat", "import", "usage", "gates", "propose", "review",
+            "inbox", "delegation", "task_status", "evidence_commit", "usage_tasks", "usage_quota", "session_state", "evidence_branch",
+            "import_formats", "client_answers", "telegram",
+        ] {
             assert!(rw.contains(&mutating) && !ro.contains(&mutating), "{mutating}");
         }
-        for c in ["templates", "delegation", "task_status", "evidence_commit", "usage_tasks", "usage_quota"] {            assert!(rw.contains(&c) && !ro.contains(&c), "{c}");
-        }
-        assert!(rw.contains(&"session_state") && !ro.contains(&"session_state"));
-        assert!(rw.contains(&"evidence_branch") && !ro.contains(&"evidence_branch"));
-        for c in ["approval_events", "task_events", "watch_filter"] {
+        for c in ["approvals", "decisions", "proposals", "history", "templates", "quick_add", "approval_events", "watch_filter", "links"] {
             assert!(rw.contains(&c) && ro.contains(&c), "{c}");
-        }
-                assert!(ro.contains(&"schedule") && ro.contains(&"export_html"));
-        assert!(ro.contains(&"commits") && ro.contains(&"agenda") && ro.contains(&"digest") && ro.contains(&"export") && ro.contains(&"links") && rw.contains(&"links"));
-        for c in ["import_formats", "history"] {
-            assert!(rw.contains(&c) && !ro.contains(&c), "{c}");
         }
         assert_eq!(PROTOCOL, "pathloom/1");
     }

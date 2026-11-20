@@ -5,16 +5,17 @@ use crate::error::{Error, Result};
 const MAX_URL: usize = 2048;
 
 /// Schemes that start another program or leak data on Windows/macOS (never allowed, even as a "custom scheme").
-const DENIED_SCHEMES: [&str; 25] = [
+const DENIED_SCHEMES: [&str; 26] = [
     "javascript", "data", "vbscript", "file", "blob", "ms-msdt", "search-ms", "search", "ms-officecmd", "ms-word", "ms-excel",
     "ms-powerpoint", "ms-settings", "shell", "ms-appinstaller", "mk", "its", "mhtml", "res", "hcp", "ms-cxh", "ms-cxh-full",
-    "ldap", "telnet", "about",
+    "ldap", "telnet", "about", "vscode",
 ];
 
 /// Extensions the OS would run (or that carry code) when "opened": never opened from a plan.
-const EXECUTABLE_EXT: [&str; 25] = [
+const EXECUTABLE_EXT: [&str; 34] = [
     "exe", "bat", "cmd", "com", "ps1", "psm1", "vbs", "vbe", "js", "jse", "wsf", "wsh", "msi", "msc", "scr", "lnk", "url", "reg",
-    "hta", "cpl", "jar", "sh", "app", "command", "pif",
+    "hta", "cpl", "jar", "sh", "app", "command", "pif", "chm", "appref-ms", "msix", "appx", "py", "pyw", "scf", "library-ms",
+    "settingcontent-ms",
 ];
 
 fn bad(u: &str, what: &str) -> Error {
@@ -89,7 +90,7 @@ mod tests {
         for ok in ["maestro://s/1", "https://a.b", "vscode-insiders://x"] {
             assert!(check_session(ok).is_ok(), "{ok}");
         }
-        for u in ["ms-msdt://x", "SEARCH-MS://x", "ms-settings://x", "file://x", "java\tscript://x", "nope", "ldap://x", "a b://x"] {
+        for u in ["ms-msdt://x", "SEARCH-MS://x", "ms-settings://x", "file://x", "java\tscript://x", "nope", "ldap://x", "a b://x", "vscode://x", "ms-appinstaller://x"] {
             assert!(check_session(u).is_err(), "{u}");
         }
     }
@@ -103,7 +104,7 @@ mod tests {
 
     #[test]
     fn executables() {
-        for p in ["a.exe", "a.BAT", "dir/x.Ps1", "x.lnk", "x.url", "x.sh"] {
+        for p in ["a.exe", "a.BAT", "dir/x.Ps1", "x.lnk", "x.url", "x.sh", "h.chm", "x.appref-ms", "x.msix", "x.py", "x.scf", "x.library-ms", "x.settingcontent-ms"] {
             assert!(is_executable(Path::new(p)), "{p}");
         }
         assert!(!is_executable(Path::new("notes.md")) && !is_executable(Path::new("exe")));

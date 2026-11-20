@@ -68,9 +68,12 @@ fn digest_contents() {
     e("2026-11-20T08:00:00Z", "TODAY-1 done", "task done");
     e("2026-11-20T08:30:00Z", "comment on LATE", "add_comment");
     e("2026-11-20T09:00:00Z", "approved X-1", "approval approve");
+    e("2026-11-20T09:10:00Z", "Y-1 done, verified: npm test", "task done");
+    e("2026-11-20T09:20:00Z", "renamed to Get it done", "rename_key");
+    e("2026-11-20T09:30:00Z", "Z-1 reopened", "task undo");
     let d = p.digest("2026-11-19T00:00:00Z", "2026-11-20").unwrap();
     let done: Vec<&str> = d.done.iter().map(|e| e.summary.as_str()).collect();
-    assert_eq!(done, ["TODAY-1 done", "approved X-1"]);
+    assert_eq!(done, ["TODAY-1 done", "approved X-1", "Y-1 done, verified: npm test"]);
     assert_eq!(keys(&d.stuck.overdue), ["LATE"]);
     assert_eq!(keys(&d.stuck.blocked), ["BLK"]);
     assert!(d.stuck.silent_claims.is_empty());

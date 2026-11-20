@@ -65,10 +65,7 @@ pub fn route(git_mode: bool, clean: bool) -> Route {
 /// Applies one owner action to the local checkout. Returns the changed files (relative to the root).
 pub fn perform(p: &Project, item: &QueueItem) -> pathloom_core::Result<(Vec<String>, Option<pathloom_core::Proposal>)> {
     let str_arg = |k: &str| item.args.get(k).and_then(|v| v.as_str()).map(str::to_string);
-    let stage_file = || {
-        let key = item.task_id.split('-').next().unwrap_or_default();
-        vec![format!("{}/stages/{key}.md", p.config.plan_dir.trim_end_matches('/'))]
-    };
+    let stage_file = || vec![p.stage_rel_path(pathloom_core::stage_key_of(&item.task_id))];
     match item.action.as_str() {
         "approve" | "reject" => {
             let reasons: Vec<String> = item.args.get("reasons").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();

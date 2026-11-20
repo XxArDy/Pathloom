@@ -238,7 +238,7 @@ fn two_agents_claim_conflict_and_activity() {
         e.iter().map(|x| (x["author"].as_str().unwrap(), x["source"].as_str().unwrap(), x["action"].as_str().unwrap())).collect();
     assert_eq!(
         rows,
-        [("codex", "mcp", "claim_task"), ("claude-code", "mcp", "set_task"), ("claude-code", "mcp", "claim_task"), ("claude-code", "mcp", "apply")]
+        [("codex", "mcp", "claim_task"), ("claude-code", "mcp", "task done"), ("claude-code", "mcp", "claim_task"), ("claude-code", "mcp", "apply")]
     );
     let (_, v) = b.call("activity", json!({"limit": 1, "stage": "A"}));
     assert_eq!(v["entries"].as_array().unwrap().len(), 1);
@@ -278,7 +278,13 @@ fn project_info_protocol_capabilities_and_read_only() {
     let mut ro = Client::start(d.path(), &["--read-only"]);
     ro.handshake();
     let (_, v) = ro.call("project_info", json!({}));
-    assert_eq!(v["capabilities"], json!(["read", "activity", "events", "validate", "commits", "agenda", "digest", "approval_events", "task_events", "watch_filter", "schedule", "export_html", "export", "links"]));
+    assert_eq!(v["capabilities"], json!(pathloom_core::capabilities(true)));
+    for c in ["approvals", "decisions", "proposals", "history", "templates"] {
+        assert!(v["capabilities"].as_array().unwrap().contains(&json!(c)), "{c}");
+    }
+    for c in ["client_answers", "quick_add", "telegram"] {
+        assert!(caps.contains(&c), "{c}");
+    }
     let (err, v) = ro.call("make_link", json!({"id": "A-01"}));
     assert!(!err, "{v}");
     assert!(v["link"].as_str().unwrap().ends_with("&stage=A&task=A-01"), "{v}");
@@ -368,7 +374,22 @@ fn apply_propose_then_list_and_decide() {
     assert_eq!(v["proposals"][0]["changes"][0]["path"], "plan/stages/A.md");
     assert!(v["proposals"][0]["decision"].is_null());
 
-    let (err, v) = c.call("decide_proposal", json!({"id": id, "approve": true, "comment": "go"}));
+    // relaying a human's answer is off by default
+    let (err, v) = c.call("decide_proposal", json!({"id": id, "approve": true, "human": "alice"}));
+    assert!(err && v["code"] == "FORBIDDEN", "{v}");
+    enable_client_answers(d.path());
+    // never on its own proposal, whoever it names as the human
+    let (err, v) = c.call("decide_proposal", json!({"id": id, "approve": true, "human": "alice"}));
+    assert!(err && v["code"] == "FORBIDDEN", "{v}");
+    assert!(!d.path().join("plan/stages/A.md").exists());
+    // another client relays the owner's answer
+    let mut other = Client::start(d.path(), &[]);
+    other.request(
+        "initialize",
+        json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "maestro", "version": "1"}}),
+    );
+    other.send(&json!({"jsonrpc": "2.0", "method": "notifications/initialized"}));
+    let (err, v) = other.call("decide_proposal", json!({"id": id, "approve": true, "human": "alice", "comment": "go"}));
     assert!(!err, "{v}");
     assert_eq!(v["state"], "approved");
     assert!(d.path().join("plan/stages/A.md").exists());
@@ -575,6 +596,9 @@ fn client_answers_forbidden_then_allowed_and_first_wins() {
     let (err, v) = c.call("answer_decision", json!({"task_id": "DECIDE-01", "choice": "Postgres", "human": "bob"}));
     assert!(err);
     assert_eq!((v["code"].as_str(), v["details"]["choice"].as_str()), (Some("ALREADY_DECIDED"), Some("SQLite")));
+    // re-asking cannot wipe the answer either
+    let q = json!({"task_id": "DECIDE-01", "question": "Really?", "options": [{"label": "Postgres"}]});
+    assert_eq!(c.call("ask_decision", q).1["code"], "ALREADY_DECIDED");
 
     // an answer given in the CLI first also wins
     cli(d.path(), &["approval", "request", "APPR-02"]);
@@ -608,4 +632,12 @@ fn export_import_and_revert_tools() {
     ro.handshake();
     assert!(!ro.call("list_history", json!({})).0);
     assert_eq!(ro.call("revert_change", json!({"id": id})).1["code"], "READ_ONLY");
+
+    // in review mode an agent cannot undo changes behind the owner's back
+    let mut p = pathloom_core::Project::open(d.path()).unwrap();
+    p.set_agent_changes(pathloom_core::AgentChanges::Review).unwrap();
+    let (_, h) = c.call("list_history", json!({}));
+    let newest = h["entries"][0]["id"].as_str().unwrap().to_string();
+    let (err, v) = c.call("revert_change", json!({"id": newest}));
+    assert!(err && v["code"] == "FORBIDDEN", "{v}");
 }

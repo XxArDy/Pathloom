@@ -9,6 +9,9 @@ use crate::project::Project;
 use crate::status::stage_views;
 use serde::Serialize;
 
+/// Log actions that close work: a task ticked (CLI, MCP `set_task`, the app) or approved by the owner.
+pub const DONE_ACTIONS: [&str; 2] = ["task done", "approval approve"];
+
 /// Days since 1970-01-01 of a `YYYY-MM-DD` date (H. Hinnant); `None` for a malformed or impossible date.
 pub fn date_to_days(s: &str) -> Option<i64> {
     let b = s.as_bytes();
@@ -133,12 +136,13 @@ impl Project {
     }
 
     /// What happened since `since` (RFC3339 UTC, `YYYY-MM-DDTHH:MM:SSZ`) and what is stuck now.
+    /// "Done" = log entries whose action is in [`DONE_ACTIONS`] (never decided from the summary text).
     pub fn digest(&self, since: &str, today: &str) -> Result<Digest> {
         let ag = self.agenda(today, 1)?;
         let mut done: Vec<LogEntry> = self
             .read_log(0, None)?
             .into_iter()
-            .filter(|e| e.at.as_str() > since && (e.summary.ends_with(" done") || e.action == "approval approve"))
+            .filter(|e| e.at.as_str() > since && DONE_ACTIONS.contains(&e.action.as_str()))
             .collect();
         done.reverse();
         let now = now_secs();

@@ -84,7 +84,7 @@ The user reads the plan as a picture, left to right. Follow these rules whenever
 
 ## Export, import, history
 
-Export: `export_plan {format: "md"|"csv"|"github"}` (or `pathloom export md|csv|github [-o FILE]`). Import also takes `md`, `csv`, `notion` and `trello`: `import_tasks {format, text, dry_run: true}` (or `pathloom import md FILE --dry-run`; add `propose` / `--propose` to leave it to the user). History: `list_history` shows what each logged action changed; `revert_change {id}` undoes one entry and fails with CONFLICT when those files changed since (`pathloom history`, `pathloom revert ID`).
+Export: `export_plan {format: "md"|"csv"|"github"|"html"}` (or `pathloom export md|csv|github|html [-o FILE]`). Import also takes `md`, `csv`, `notion` and `trello`: `import_tasks {format, text, dry_run: true}` (or `pathloom import md FILE --dry-run`; add `propose` / `--propose` to leave it to the user). History: `list_history` shows what each logged action changed; `revert_change {id}` undoes one entry and fails with CONFLICT when those files changed since, FORBIDDEN in review mode (`pathloom history`, `pathloom revert ID`). Never approve your own proposal: `decide_proposal` only relays a human's answer from your client (`human`, needs `allow_client_answers`).
 
 ## Importing a plan
 

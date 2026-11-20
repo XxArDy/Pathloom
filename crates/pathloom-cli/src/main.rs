@@ -207,7 +207,7 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
         Cmd::Stage(StageCmd::RenameKey { key, new_key }) => {
             let p = open(cli)?;
             let s = p.rename_stage_key(key, new_key)?;
-            let file = format!("{}/stages/{}.md", p.config.plan_dir.trim_end_matches('/'), s.key);
+            let file = p.stage_rel_path(&s.key);
             let e = ops::entry("rename_key", format!("{key} renamed to {new_key}"), vec![s.key.clone()], vec![], vec![file]);
             let v = ops::log(&p, &actor, e, json!({"from": key, "to": s.key}));
             emit(cli, &v, || format!("Renamed {key} to {new_key}"));
@@ -464,7 +464,7 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
         }
         Cmd::Revert { id } => {
             let p = open(cli)?;
-            let v = ops::revert_change(&p, &actor, id)?;
+            let v = ops::revert_change(&p, &actor, id, false)?;
             emit(cli, &v, || format!("Reverted {id} ({})", s(&v, "action")));
         }
         Cmd::Task(TaskCmd::Release { task_id, force }) => {
@@ -559,6 +559,8 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
         }
         Cmd::Proposals(c) => {
             let p = open(cli)?;
+            // Deciding is the owner's job: `me` unless --author says otherwise (an author never decides their own).
+            let owner = if cli.author == "agent" { ops::Actor::new("me", "cli") } else { actor.clone() };
             match c {
                 ProposalCmd::List { state } => {
                     let v = ops::list_proposals(&p, state.as_deref())?;
@@ -584,7 +586,7 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
                     });
                 }
                 ProposalCmd::Approve { id, comment } => {
-                    let v = ops::decide_proposal(&p, &actor, "proposal approve", id, true, comment.as_deref())?;
+                    let v = ops::decide_proposal(&p, &owner, "proposal approve", id, true, comment.as_deref())?;
                     emit(cli, &v, || {
                         if v["state"] == "conflict" {
                             format!("Conflict: a stage changed since proposal {id} was made; nothing applied")
@@ -597,7 +599,7 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
                     }
                 }
                 ProposalCmd::Reject { id, comment } => {
-                    let v = ops::decide_proposal(&p, &actor, "proposal reject", id, false, comment.as_deref())?;
+                    let v = ops::decide_proposal(&p, &owner, "proposal reject", id, false, comment.as_deref())?;
                     emit(cli, &v, || format!("Rejected proposal {id}"));
                 }
             }

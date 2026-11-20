@@ -20,7 +20,7 @@
   - Відхилення → `rejected` (коментар необов'язковий).
   - Вирішена пропозиція переїжджає в `.pathloom/proposals/decided/<id>.json` (зберігаються останні 200, старіші видаляються). Список «очікують» — лише файли верхнього рівня.
   - `accept_proposal`/`reject_proposal` лишаються як обгортки (CLI `proposals accept|reject` працює як раніше).
-- MCP: `list_proposals {state?: pending|approved|rejected|conflict|all}` (типово `pending`; повертає `id, author, created_at, preview, changes, decision`), `decide_proposal {id, approve, comment?}`.
+- MCP: `list_proposals {state?: pending|approved|rejected|conflict|all}` (типово `pending`; повертає `id, author, created_at, preview, changes, decision`), `decide_proposal {id, approve, human, comment?}` — лише ретранслює відповідь людини з клієнта (потрібен `allow_client_answers`); автор пропозиції не може її вирішити (`FORBIDDEN`).
 - CLI: `pathloom proposal list [--state S]`, `pathloom proposal approve ID [--comment]`, `pathloom proposal reject ID [--comment]` (`proposals` лишається аліасом, `accept` = `approve`).
 - `pathloom watch --json`: `{"type":"proposal","id":"…","change":"created"}` і нове `{"type":"proposal","id":"…","change":"decided","state":"approved|rejected|conflict","at":"…"}`. Поле `state` необов'язкове (лише в `decided`). Перенесення файлу в `decided/` не дає події `deleted`. Назви із запиту: `proposal.created` = `type: proposal, change: created`; `proposal.decided` = `change: decided`.
 - Застосунок: панель «Пропозиції» (лічильник у шапці, якщо > 0): автор, час, що змінюється, построковий дифф `before`/`after`, кнопки «Схвалити» / «Відхилити» (з необов'язковим коментарем); конфлікт показується повідомленням.
@@ -61,15 +61,15 @@ task_info:
                choice: SQLite, at: …, by: me, asked_by: claude}
 ```
 
-- MCP `ask_decision {task_id, question, options: [{label, description?}], recommended?}` → `Project::ask_decision(...)`: 1–8 варіантів, `label` ≤ 80, `description` ≤ 500, `question` ≤ 500, `recommended` — індекс; скидає попередній `choice`, знімає галочку. CLI `pathloom decision ask ID --question Q --option "label|description"... [--recommended N]`.
+- MCP `ask_decision {task_id, question, options: [{label, description?}], recommended?}` → `Project::ask_decision(...)`: 1–8 варіантів, `label` ≤ 80, `description` ≤ 500, `question` ≤ 500, `recommended` — індекс; на задачу з уже записаною відповіддю — `AlreadyDecided` (агент не може переписати рішення власника), доки власник не зніме галочку з задачі. CLI `pathloom decision ask ID --question Q --option "label|description"... [--recommended N]`.
 - Відповідь власника: `Project::decide(task_id, choice, by)` (`choice` — `label` варіанта або власний текст ≤ 2000): записує `choice, at, by`, ставить галочку, рядок у журнал. CLI `pathloom decision answer ID "текст"`; застосунок — кнопки варіантів (рекомендований виділено) + поле «свій варіант».
 - Агент читає відповідь через `get_stage` (`task_info`) або подію `stage updated` у `watch`. MCP `list_decisions {open?: bool}`.
 - Експорт: `pathloom decisions [--md]` — усі рішення з відповіддю; `--md` дає Markdown:
   ```
-  ## DECIDE-01 — Яку БД?
-  - Рішення: SQLite
-  - Хто/коли: me, 2026-11-20
-  - Варіанти: SQLite (рекомендовано), Postgres
+  ## DECIDE-01 — Which DB?
+  - Decision: SQLite
+  - By/when: me, 2026-11-20
+  - Options: SQLite (recommended), Postgres
   ```
 
 ## 4. Живий статус і делегування

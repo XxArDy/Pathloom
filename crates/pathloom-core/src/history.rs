@@ -10,8 +10,12 @@
 //! - Files over 2 MB or not valid UTF-8 are not tracked.
 //! - The history folder is trimmed to about 20 MB by deleting the oldest entries.
 //!
+//! Every caller that changes plan files must log (or [`Project::checkpoint`]) right after, or its edit is
+//! folded into the next entry and reverting that entry would undo it too.
+//!
 //! `revert` is allowed only when every file of the entry still equals its `after`; otherwise it fails with
-//! `Error::HistoryConflict` and writes nothing. A revert is logged like any action, so it can be reverted too.
+//! `Error::HistoryConflict` and writes nothing. Entry paths outside `plan_dir` (absolute, `..`) fail with
+//! `Error::OutsideProject`. A revert is logged like any action, so it can be reverted too.
 
 use crate::error::{Error, Result};
 use crate::fsutil::{FileLock, format_secs, now_secs, write_atomic};
@@ -76,6 +80,20 @@ impl Project {
         s
     }
 
+    /// `rel` is a relative `/`-separated path inside `plan_dir`: no `..`, root, drive, `\` or `:` (Windows streams).
+    fn is_plan_rel(&self, rel: &str) -> bool {
+        let p = Path::new(rel);
+        !rel.contains(['\\', ':', '\0'])
+            && p.components().all(|c| matches!(c, std::path::Component::Normal(_)))
+            && self.root.join(p).starts_with(self.plan_dir())
+    }
+
+    /// Record a history entry for plan changes made by `action` without writing an activity log line
+    /// (frequent edits such as board saves). Best effort, like [`Project::log_action`].
+    pub fn checkpoint(&self, action: &str) -> Result<()> {
+        self.record_history(&LogEntry { action: action.into(), ..Default::default() })
+    }
+
     /// Store the current plan files as the baseline of the next entry (used by `init`).
     pub(crate) fn history_prime(&self) -> Result<()> {
         let _l = FileLock::acquire(&self.root.join(LOCK))?;
@@ -110,6 +128,7 @@ impl Project {
         };
         let json = serde_json::to_vec(&entry).map_err(|e| Error::InvalidSpec(e.to_string()))?;
         write_atomic(&self.history_dir().join(format!("{}.json", entry.id)), &json)?;
+        self.ensure_gitignore();
         self.save_baseline(&now)?;
         self.trim_history(MAX_HISTORY_BYTES);
         Ok(())
@@ -168,6 +187,10 @@ impl Project {
         let entry: HistoryEntry = std::fs::read(&path)
             .map_err(|_| Error::NotFound(format!("history entry {id}")))
             .and_then(|b| serde_json::from_slice(&b).map_err(|e| crate::error::parse_err(&path, e)))?;
+        // Entry files are plain JSON anyone can edit: only plan files may be read, written or deleted.
+        if let Some(f) = entry.files.iter().find(|f| !self.is_plan_rel(&f.path)) {
+            return Err(Error::OutsideProject(f.path.clone()));
+        }
         let changed: Vec<String> = entry
             .files
             .iter()

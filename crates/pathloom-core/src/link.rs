@@ -79,6 +79,10 @@ pub fn parse_link(link: &str) -> Result<LinkTarget> {
         }
     }
     let project = project.filter(|p| !p.trim().is_empty() && !p.contains('\0')).ok_or_else(|| bad("link has no project"))?;
+    // `\\host\share`, `//host/share` and `\\?\` paths would make the app touch a network share (NTLM leak).
+    if project.trim_start().get(..2).is_some_and(|h| h.chars().all(|c| c == '\\' || c == '/')) {
+        return Err(bad("link project must be a local folder, not a network or device path"));
+    }
     let stage = stage.filter(|s| !s.is_empty());
     let task = task.filter(|s| !s.is_empty());
     if let Some(s) = &stage
@@ -128,6 +132,10 @@ mod tests {
             "pathloom://open?project=%2Fa&task=M0-1&stage=M1",
             "pathloom://open?project=%ZZ",
             "pathloom://open?project=%FF",
+            "pathloom://open?project=%5C%5Cevil%5Cshare",
+            "pathloom://open?project=%2F%2Fevil%2Fshare",
+            "pathloom://open?project=%5C%5C%3F%5CC%3A%5Cx",
+            "pathloom://open?project=%5C%2Fevil%2Fshare",
         ] {
             assert!(parse_link(l).is_err(), "{l}");
         }

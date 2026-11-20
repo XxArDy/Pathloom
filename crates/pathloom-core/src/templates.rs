@@ -13,6 +13,16 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+/// The user's template folder (CLI, MCP and the app): `PATHLOOM_TEMPLATES_DIR`, else `~/.pathloom/templates`
+/// (`USERPROFILE` on Windows, `HOME` elsewhere). `None` when neither is set.
+pub fn user_templates_dir() -> Option<PathBuf> {
+    if let Some(d) = std::env::var_os("PATHLOOM_TEMPLATES_DIR") {
+        return Some(d.into());
+    }
+    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?;
+    Some(PathBuf::from(home).join(".pathloom").join("templates"))
+}
+
 /// (id, title en, description en, title uk, description uk, en json, uk json)
 type Builtin = (&'static str, &'static str, &'static str, &'static str, &'static str, &'static str, &'static str);
 

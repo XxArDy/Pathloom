@@ -117,7 +117,7 @@ impl Project {
     /// (more than 12 tasks: split it), `NO_DESCRIPTION` (a stage with tasks but no sentence on what it is for).
     pub fn plan_hints(&self) -> Result<Vec<Issue>> {
         let stages = self.load_stages()?;
-        let path = |k: &str| format!("{}/stages/{k}.md", self.config.plan_dir.trim_end_matches('/'));
+        let path = |k: &str| self.stage_rel_path(k);
         let mut out = Vec::new();
         let deps: std::collections::HashMap<&str, Vec<&str>> =
             stages.iter().map(|s| (s.key.as_str(), s.depends.iter().filter(|d| !d.soft).map(|d| d.id.as_str()).collect())).collect();

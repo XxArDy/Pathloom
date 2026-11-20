@@ -58,6 +58,7 @@ impl From<Error> for ApiError {
             }
             Error::Io(_) => ("IO_ERROR", Value::Null),
             Error::Git(_) => ("GIT_ERROR", Value::Null),
+            Error::Forbidden(_) => ("FORBIDDEN", Value::Null),
         };
         ApiError { code, message, details }
     }
@@ -252,9 +253,23 @@ pub fn list_proposals(p: &Project, state: Option<&str>) -> ApiResult<Value> {
     Ok(json!({"proposals": list}))
 }
 
+/// A client relays a human's decision on a proposal (MCP `decide_proposal`): needs `allow_client_answers`,
+/// `human` must not be the agent, and an agent can never decide its own proposal (`FORBIDDEN`).
+pub fn decide_proposal_for(p: &Project, a: &Actor, id: &str, approve: bool, comment: Option<&str>, human: &str) -> ApiResult<Value> {
+    let by = client_author(p, a, human)?;
+    if normalize_agent(&p.proposal(id)?.author) == a.name {
+        return Err(ApiError::new("FORBIDDEN", format!("{} cannot decide its own proposal {id}: the owner decides it", a.name)));
+    }
+    decide_proposal_as(p, a, "decide_proposal", id, approve, comment, &by)
+}
+
 /// Approve or reject a proposal and log it. A conflict is a result (`state: conflict`), not an error.
 pub fn decide_proposal(p: &Project, a: &Actor, action: &str, id: &str, approve: bool, comment: Option<&str>) -> ApiResult<Value> {
-    let prop = p.decide_proposal(id, approve, comment, &a.name)?;
+    decide_proposal_as(p, a, action, id, approve, comment, &a.name)
+}
+
+fn decide_proposal_as(p: &Project, a: &Actor, action: &str, id: &str, approve: bool, comment: Option<&str>, by: &str) -> ApiResult<Value> {
+    let prop = p.decide_proposal(id, approve, comment, by)?;
     let state = prop.decision.as_ref().map_or("", |d| d.state.as_str());
     let stages: Vec<String> = prop.preview.created.iter().chain(&prop.preview.updated).cloned().collect();
     let (summary, stages, files) = match state {
@@ -447,7 +462,7 @@ fn client_author(p: &Project, a: &Actor, human: &str) -> ApiResult<String> {
 /// A client relays a human's approval or rejection (`respond_approval`); needs `allow_client_answers`.
 pub fn respond_approval(p: &Project, a: &Actor, task_id: &str, approve: bool, reasons: &[String], comment: Option<&str>, human: &str) -> ApiResult<Value> {
     let by = client_author(p, a, human)?;
-    let s = p.decide_approval(task_id, approve, reasons, comment, &by)?;
+    let s = p.relay_approval(task_id, approve, reasons, comment, &by)?;
     let state = if approve { "approved" } else { "rejected" };
     let v = json!({"state": state, "task_id": task_id, "by": by, "stage": brief(&s, p)?});
     let action = if approve { "approval approve" } else { "approval reject" };
@@ -497,10 +512,10 @@ pub fn decisions_md(p: &Project) -> ApiResult<String> {
                 .options
                 .iter()
                 .enumerate()
-                .map(|(i, o)| if d.recommended == Some(i) { format!("{} (рекомендовано)", o.label) } else { o.label.clone() })
+                .map(|(i, o)| if d.recommended == Some(i) { format!("{} (recommended)", o.label) } else { o.label.clone() })
                 .collect();
             Some(format!(
-                "## {} — {}\n- Рішення: {choice}\n- Хто/коли: {}, {}\n- Варіанти: {}\n",
+                "## {} — {}\n- Decision: {choice}\n- By/when: {}, {}\n- Options: {}\n",
                 v.task_id,
                 d.question,
                 d.by,
@@ -607,7 +622,7 @@ fn stage_key(task_id: &str) -> String {
 }
 
 fn stage_file(p: &Project, key: &str) -> String {
-    format!("{}/stages/{key}.md", p.config.plan_dir.trim_end_matches('/'))
+    p.stage_rel_path(key)
 }
 
 /// Write a log entry for a successful mutation. A failing log never fails the action:
@@ -847,15 +862,9 @@ pub fn usage_summary(p: &Project) -> ApiResult<Value> {
     Ok(to_v(&p.usage_summary()?))
 }
 
-/// `export_plan`: the plan as `md`, `csv` or `github` (issues JSON) text. Read-only.
+/// `export_plan`: the plan as `md`, `csv`, `github` (issues JSON) or `html` text. Read-only.
 pub fn export_plan(p: &Project, format: &str) -> ApiResult<Value> {
-    let text = match format {
-        "md" | "markdown" => p.export_markdown()?,
-        "csv" => p.export_csv()?,
-        "github" => p.export_github_issues()?,
-        "html" => p.export_html(&pathloom_core::now_rfc3339())?,
-        _ => return Err(ApiError::new("INVALID_SPEC", format!("unknown export format `{format}` (md, csv, github, html)"))),
-    };
+    let text = p.export(format, &pathloom_core::now_rfc3339())?;
     Ok(json!({"format": format, "text": text}))
 }
 
@@ -872,29 +881,9 @@ pub fn import_as(
     direct: bool,
     propose: bool,
 ) -> ApiResult<Value> {
-    let (mut spec, report) = match format {
-        "spec-kit" => {
-            let (s, r) = p.import_spec_kit(text, prefix)?;
-            (s, to_v(&r))
-        }
-        "md" | "markdown" | "csv" | "trello" | "notion" => {
-            let s = match format {
-                "csv" => p.import_csv(text)?,
-                "trello" => p.import_trello(text)?,
-                "notion" => p.import_notion(text)?,
-                _ => p.import_markdown(text)?,
-            };
-            let keys: Vec<&str> = s.stages.iter().filter_map(|x| x.id.as_deref()).collect();
-            let tasks: usize = s.stages.iter().map(|x| x.tasks.len()).sum();
-            (s.clone(), json!({"format": format, "feature": "", "stages": keys, "tasks": tasks}))
-        }
-        _ => {
-            return Err(ApiError::new(
-                "INVALID_SPEC",
-                format!("unknown format `{format}` (supported: spec-kit, md, csv, trello, notion)"),
-            ));
-        }
-    };
+    let (mut spec, r) = p.import(format, text, prefix)?;
+    let mut report = to_v(&r);
+    report["format"] = json!(format);
     spec.board = board.map(String::from);
     // Same policy as an agent's `apply`: imported `[x]` tasks need evidence / go to review (`direct` = owner override).
     let enforce = !dry_run && !direct;
@@ -922,7 +911,12 @@ pub fn history(p: &Project, limit: usize) -> ApiResult<Value> {
 }
 
 /// Undo one history entry (`CONFLICT` with the paths when files changed since). Logged as `revert`.
-pub fn revert_change(p: &Project, a: &Actor, id: &str) -> ApiResult<Value> {
+/// `agent`: an agent asks (MCP). With `agent_changes = review` agents may not change the plan directly,
+/// so the revert is refused (`FORBIDDEN`); the owner reverts in the app or the CLI.
+pub fn revert_change(p: &Project, a: &Actor, id: &str, agent: bool) -> ApiResult<Value> {
+    if agent && p.config.agent_changes == pathloom_core::AgentChanges::Review {
+        return Err(ApiError::new("FORBIDDEN", "review mode: agents cannot revert changes directly; ask the owner to revert it in the app"));
+    }
     let e = p.revert(id, &a.name, a.source)?;
     Ok(json!({"reverted": e.id, "action": e.action, "files": e.files.iter().map(|f| &f.path).collect::<Vec<_>>()}))
 }

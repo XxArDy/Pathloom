@@ -82,3 +82,48 @@ fn history_is_trimmed_by_size() {
     p.trim_history(1);
     assert_eq!(p.history(0).unwrap().len(), 1); // the newest always stays
 }
+
+#[test]
+fn revert_refuses_paths_outside_plan() {
+    let (d, p) = project();
+    edit(&p, "stages:\n  - {id: A, title: Alpha, tasks: [one]}\n", "apply");
+    let id = p.history(1).unwrap().remove(0).id;
+    let file = d.path().join(format!(".pathloom/history/{id}.json"));
+    let victim = d.path().join("victim.txt");
+    std::fs::write(&victim, "keep").unwrap();
+    for bad in ["../x", "victim.txt", "plan/../victim.txt", "/etc/passwd", "C:/x", "plan\\stages\\A.md", ".pathloom/claims.json"] {
+        let entry = serde_json::json!({"id": id, "at": "2026-11-20T00:00:00Z", "action": "apply",
+            "files": [{"path": bad, "before": "pwned", "after": null}]});
+        std::fs::write(&file, entry.to_string()).unwrap();
+        assert!(matches!(p.revert(&id, "t", "t"), Err(Error::OutsideProject(_))), "{bad}");
+    }
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep");
+}
+
+#[test]
+fn reverting_an_agent_edit_keeps_the_owner_edit_before_it() {
+    let (d, p) = project();
+    edit(&p, "stages:\n  - {id: A, title: Alpha, tasks: [one]}\n", "apply");
+    // owner edit, logged (as the desktop app now does)
+    p.set_title("A", "Owner title").unwrap();
+    p.log_action(&LogEntry { action: "stage_rename".into(), author: "me".into(), source: "app".into(), ..Default::default() }).unwrap();
+    // agent edit of the same file
+    p.add_task("A", "agent task").unwrap();
+    p.log_action(&LogEntry { action: "apply".into(), author: "bot".into(), source: "mcp".into(), ..Default::default() }).unwrap();
+    let agent = p.history(1).unwrap().remove(0);
+    p.revert(&agent.id, "me", "app").unwrap();
+    let text = std::fs::read_to_string(stage_file(&d)).unwrap();
+    assert!(text.contains("Owner title"), "{text}");
+    assert!(!text.contains("agent task"), "{text}");
+}
+
+#[test]
+fn checkpoint_records_history_without_a_log_line() {
+    let (_d, p) = project();
+    edit(&p, "stages:\n  - {id: A, title: Alpha, tasks: [one]}\n", "apply");
+    let log_before = p.read_log(500, None).unwrap().len();
+    p.set_title("A", "Renamed").unwrap();
+    p.checkpoint("board_save").unwrap();
+    assert_eq!(p.history(1).unwrap()[0].action, "board_save");
+    assert_eq!(p.read_log(500, None).unwrap().len(), log_before);
+}

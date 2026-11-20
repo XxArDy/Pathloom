@@ -128,6 +128,18 @@ fn trello_lists_cards_and_checklists() {
 }
 
 #[test]
+fn trello_non_ascii_due_does_not_panic() {
+    let (_d, p) = fresh();
+    // Byte 10 falls inside a multi-byte character; an impossible date is ignored too.
+    let json = r#"{"lists": [{"id": "l1", "name": "Todo"}],
+      "cards": [{"name": "A", "idList": "l1", "due": "2026-12-0ї"}, {"name": "B", "idList": "l1", "due": "срок завтра"},
+                {"name": "C", "idList": "l1", "due": "2026-02-30T00:00:00Z"}]}"#;
+    let spec = p.import_trello(json).unwrap();
+    assert_eq!(spec.stages[0].tasks.len(), 3);
+    assert_eq!(spec.stages[0].due, None);
+}
+
+#[test]
 fn github_issues_one_per_open_task() {
     let (_d, p) = source();
     let v: serde_json::Value = serde_json::from_str(&p.export_github_issues().unwrap()).unwrap();

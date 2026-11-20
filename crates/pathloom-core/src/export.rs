@@ -134,6 +134,7 @@ impl Project {
         let name = html_escape(&self.config.name);
         let mut o = format!(
             "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+             <meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data:\">\
              <title>{name}</title><style>{CSS}</style></head><body><h1>{name}</h1><p class=\"meta\">Read-only export · {}</p>",
             html_escape(now)
         );
@@ -185,5 +186,6 @@ mod tests {
         assert!(html.contains("&lt;script&gt;alert(1)") && html.contains("My &lt;b&gt;plan"));
         assert!(html.contains("<svg") && html.contains("<line") && html.contains("disabled") && html.contains("Blocked (1)"));
         assert!(html.contains("2026-11-20T10:00:00Z"));
+        assert!(html.contains("Content-Security-Policy\" content=\"default-src 'none'"), "no scripts or remote loads even if escaping fails");
     }
 }

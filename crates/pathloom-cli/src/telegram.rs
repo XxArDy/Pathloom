@@ -90,8 +90,8 @@ fn send_digest(bot: &Bot, p: &Project, chat: &str, st: &mut State) -> Result<(),
         return Ok(());
     }
     let v = crate::agenda::digest(p, None).map_err(|e| e.message)?;
-    let text = v["markdown"].as_str().unwrap_or_default();
-    bot.call("sendMessage", &json!({"chat_id": chat, "text": text}), 30)?;
+    let text = clip(v["markdown"].as_str().unwrap_or_default());
+    bot.send_message(&json!({"chat_id": chat, "text": text}))?;
     st.digest_sent = Some(today);
     st.save(p).map_err(|e| e.to_string())
 }
@@ -107,7 +107,9 @@ impl State {
 
     fn save(&self, p: &Project) -> std::io::Result<()> {
         let text = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
-        write_file_atomic(&Self::path(p), text.as_bytes())
+        write_file_atomic(&Self::path(p), text.as_bytes())?;
+        p.ensure_gitignore();
+        Ok(())
     }
 }
 
@@ -121,9 +123,16 @@ fn is_image(f: &str) -> bool {
     [".png", ".jpg", ".jpeg", ".gif"].iter().any(|e| f.ends_with(e))
 }
 
+/// Telegram refuses messages over 4096 characters; leave room for the "approved by ..." line added on edit.
+const MAX_TEXT: usize = 3500;
+
+fn clip(text: &str) -> String {
+    if text.chars().count() <= MAX_TEXT { text.to_string() } else { text.chars().take(MAX_TEXT - 1).chain(['…']).collect() }
+}
+
 fn card_text(a: &ApprovalView) -> String {
     let note = if a.note.is_empty() { String::new() } else { format!("\n{}", a.note) };
-    format!("{} {}{note}", a.task_id, a.title)
+    clip(&format!("{} {}{note}", a.task_id, a.title))
 }
 
 fn multipart(boundary: &str, fields: &[(&str, &str)], file: (&str, &str, &[u8])) -> Vec<u8> {
@@ -154,12 +163,34 @@ impl Bot {
     }
 
     fn finish(&self, r: attohttpc::Result<attohttpc::Response>) -> Result<Value, String> {
-        let body = r.and_then(attohttpc::Response::text).map_err(|e| sanitize(&e.to_string(), &self.token))?;
-        let v: Value = serde_json::from_str(&body).map_err(|_| "telegram: reply is not JSON".to_string())?;
+        self.finish_coded(r).map_err(|(_, e)| e)
+    }
+
+    /// Like `finish`, with Telegram's `error_code` (400 = this request is bad and will never succeed).
+    fn finish_coded(&self, r: attohttpc::Result<attohttpc::Response>) -> Result<Value, (Option<i64>, String)> {
+        let body = r.and_then(attohttpc::Response::text).map_err(|e| (None, sanitize(&e.to_string(), &self.token)))?;
+        let v: Value = serde_json::from_str(&body).map_err(|_| (None, "telegram: reply is not JSON".to_string()))?;
         if v["ok"].as_bool() == Some(true) {
             Ok(v["result"].clone())
         } else {
-            Err(sanitize(&format!("telegram: {}", v["description"].as_str().unwrap_or("request failed")), &self.token))
+            Err((v["error_code"].as_i64(), sanitize(&format!("telegram: {}", v["description"].as_str().unwrap_or("request failed")), &self.token)))
+        }
+    }
+
+    /// `sendMessage`: `Ok(true)` sent, `Ok(false)` refused for good (HTTP 400), `Err` = try again later.
+    fn send_message(&self, params: &Value) -> Result<bool, String> {
+        let r = attohttpc::post(self.url("sendMessage"))
+            .timeout(Duration::from_secs(30))
+            .header("Content-Type", "application/json")
+            .bytes(params.to_string())
+            .send();
+        match self.finish_coded(r) {
+            Ok(_) => Ok(true),
+            Err((Some(400), e)) => {
+                eprintln!("{e}");
+                Ok(false)
+            }
+            Err((_, e)) => Err(e),
         }
     }
 
@@ -223,20 +254,32 @@ fn send_previews(bot: &Bot, p: &Project, chat: &str, a: &ApprovalView) {
     }
 }
 
+/// Sends each new pending approval: the card first, then its image previews. A card Telegram refuses (400)
+/// is marked sent and skipped; a network error leaves it for the next round. One failure never stops the
+/// others; the first error is returned after the loop.
 fn send_new(bot: &Bot, p: &Project, chat: &str, st: &mut State) -> Result<(), String> {
     let pending = p.approvals(Some(ApprovalState::Pending)).map_err(|e| e.to_string())?;
+    let mut first_err = None;
     for a in to_send(&pending, st) {
         if Cb::Reason(a.task_id.clone(), "wrong-place".into()).format().is_none() {
             eprintln!("telegram: task id {} is too long for a button, skipped", a.task_id);
             continue;
         }
-        send_previews(bot, p, chat, a);
         let msg = json!({"chat_id": chat, "text": card_text(a), "reply_markup": main_keyboard(&a.task_id)});
-        bot.call("sendMessage", &msg, 30)?;
+        match bot.send_message(&msg) {
+            Ok(true) => send_previews(bot, p, chat, a),
+            Ok(false) => eprintln!("telegram: card for {} refused, skipped", a.task_id),
+            Err(e) => {
+                first_err.get_or_insert(e);
+                continue;
+            }
+        }
         st.sent.insert(a.task_id.clone(), a.requested_at.clone());
-        st.save(p).map_err(|e| e.to_string())?;
+        if let Err(e) = st.save(p) {
+            first_err.get_or_insert(e.to_string());
+        }
     }
-    Ok(())
+    first_err.map_or(Ok(()), Err)
 }
 
 /// Telegram username (or first name / id), reduced to characters safe in an author field.
@@ -247,7 +290,7 @@ fn who(from: &Value) -> String {
 }
 
 fn decide(p: &Project, task_id: &str, approve: bool, reasons: &[String], by: &str) -> ApiResult<()> {
-    let s = p.decide_approval(task_id, approve, reasons, None, by)?;
+    let s = p.relay_approval(task_id, approve, reasons, None, by)?;
     let state = if approve { "approved" } else { "rejected" };
     let action = if approve { "approval approve" } else { "approval reject" };
     let mut e = ops::entry(action, format!("{state} {task_id}"), vec![s.key.clone()], vec![task_id.into()], vec![]);
@@ -434,6 +477,16 @@ mod tests {
         assert!(is_image("a/B.PNG") && is_image("https://x/y.jpg?v=1") && !is_image("doc.pdf"));
         let b = String::from_utf8(multipart("BB", &[("chat_id", "1")], ("photo", "a\"b.png", b"DATA"))).unwrap();
         assert!(b.contains("name=\"chat_id\"\r\n\r\n1\r\n") && b.contains("filename=\"a_b.png\"") && b.ends_with("--BB--\r\n"));
+    }
+
+    #[test]
+    fn long_cards_are_clipped_on_char_boundaries() {
+        let mut a = view("t1", "x");
+        a.note = "я".repeat(5000);
+        let text = card_text(&a);
+        assert_eq!(text.chars().count(), MAX_TEXT);
+        assert!(text.ends_with('…'));
+        assert_eq!(clip("short"), "short");
     }
 
     #[test]

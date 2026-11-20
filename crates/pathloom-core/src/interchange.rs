@@ -36,6 +36,37 @@ fn md_line(t: &Task, depth: usize, out: &mut String) {
 }
 
 impl Project {
+    /// The plan as text in `format`: `md` (or `markdown`), `csv`, `github` (issues JSON) or `html`
+    /// (`now` is shown as the export time). Read-only. One entry point for the CLI, MCP and the app.
+    pub fn export(&self, format: &str, now: &str) -> Result<String> {
+        match format {
+            "md" | "markdown" => self.export_markdown(),
+            "csv" => self.export_csv(),
+            "github" => self.export_github_issues(),
+            "html" => self.export_html(now),
+            _ => Err(bad(format!("unknown export format `{format}` (md, csv, github, html)"))),
+        }
+    }
+
+    /// Parse `text` in `format` (`spec-kit`, `md`/`markdown`, `csv`, `trello`, `notion`) into an apply spec
+    /// plus a short report. Writes nothing. `prefix` is used by `spec-kit` only.
+    pub fn import(&self, format: &str, text: &str, prefix: Option<&str>) -> Result<(ApplySpec, crate::ImportReport)> {
+        let spec = match format {
+            "spec-kit" => return self.import_spec_kit(text, prefix),
+            "md" | "markdown" => self.import_markdown(text)?,
+            "csv" => self.import_csv(text)?,
+            "trello" => self.import_trello(text)?,
+            "notion" => self.import_notion(text)?,
+            _ => return Err(bad(format!("unknown import format `{format}` (spec-kit, md, csv, trello, notion)"))),
+        };
+        let report = crate::ImportReport {
+            feature: String::new(),
+            stages: spec.stages.iter().filter_map(|x| x.id.clone()).collect(),
+            tasks: spec.stages.iter().map(|x| x.tasks.len()).sum(),
+        };
+        Ok((spec, report))
+    }
+
     /// `# <project>`, then `## KEY: Title` per stage with `Depends:` / `Due:` lines and `- [ ]` / `- [x]` tasks.
     pub fn export_markdown(&self) -> Result<String> {
         let mut out = format!("# {}\n", self.config.name.replace('\n', " "));
@@ -116,8 +147,7 @@ struct Draft {
 }
 
 fn is_date(s: &str) -> bool {
-    let b = s.as_bytes();
-    b.len() == 10 && b.iter().enumerate().all(|(i, c)| if i == 4 || i == 7 { *c == b'-' } else { c.is_ascii_digit() })
+    crate::agenda::date_to_days(s).is_some()
 }
 
 fn truthy(s: &str) -> bool {
@@ -321,8 +351,11 @@ impl Project {
                 let name = s(c, "name");
                 d.tasks.push((name.clone(), c.get("dueComplete").and_then(Value::as_bool).unwrap_or(false)));
                 let due = s(c, "due");
-                if due.len() >= 10 && is_date(&due[..10]) && d.due.as_deref().is_none_or(|x| &due[..10] < x) {
-                    d.due = Some(due[..10].to_string());
+                // `get`: a non-ASCII `due` must not panic on a char boundary.
+                if let Some(day) = due.get(..10).filter(|x| is_date(x))
+                    && d.due.as_deref().is_none_or(|x| day < x)
+                {
+                    d.due = Some(day.to_string());
                 }
                 let ids: Vec<String> = c.get("idChecklists").and_then(Value::as_array).into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect();
                 for cl in checklists.iter().filter(|cl| ids.contains(&s(cl, "id"))) {

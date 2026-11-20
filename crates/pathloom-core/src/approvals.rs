@@ -136,6 +136,25 @@ impl Project {
     /// [`Error::AlreadyDecided`]): approve ticks the task; reject un-ticks it, stores `reasons` and `comment`
     /// and adds `<by>: rejected <ID> [reasons]: <comment>` to the stage comments.
     pub fn decide_approval(&self, task_id: &str, approve: bool, reasons: &[String], comment: Option<&str>, by: &str) -> Result<Stage> {
+        self.decide_approval_with(task_id, approve, reasons, comment, by, false)
+    }
+
+    /// [`Project::decide_approval`] for an answer relayed by a client or bot (`by` = `agent:human`,
+    /// `telegram:user`): the task must have a pending approval request, else `NotFound` / `AlreadyDecided`.
+    /// Only the owner may approve a task that nobody sent for review.
+    pub fn relay_approval(&self, task_id: &str, approve: bool, reasons: &[String], comment: Option<&str>, by: &str) -> Result<Stage> {
+        self.decide_approval_with(task_id, approve, reasons, comment, by, true)
+    }
+
+    fn decide_approval_with(
+        &self,
+        task_id: &str,
+        approve: bool,
+        reasons: &[String],
+        comment: Option<&str>,
+        by: &str,
+        require_pending: bool,
+    ) -> Result<Stage> {
         let reasons: Vec<String> = reasons.iter().map(|r| r.trim().to_string()).filter(|r| !r.is_empty()).collect();
         if reasons.len() > MAX_REASONS || reasons.iter().any(|r| r.chars().count() > MAX_REASON_LEN) {
             return Err(bad(format!("at most {MAX_REASONS} reasons of {MAX_REASON_LEN} characters")));
@@ -147,6 +166,9 @@ impl Project {
                 return Err(Error::NotFound(format!("task {task_id}")));
             }
             let info = s.task_info.entry(task_id.to_string()).or_default();
+            if require_pending && info.approval.is_none() {
+                return Err(Error::NotFound(format!("pending approval of {task_id}")));
+            }
             // First answer wins. No approval record at all = the owner approves directly.
             if let Some(a) = info.approval.as_ref().filter(|a| a.state != ApprovalState::Pending) {
                 return Err(Error::AlreadyDecided {
@@ -216,7 +238,8 @@ impl Project {
     }
 
     /// Ask the owner a question: 1-8 options (`label` <= 80, `description` <= 500), `question` <= 500.
-    /// Clears an earlier choice and un-ticks the task.
+    /// Replaces an open question and un-ticks the task. An answered decision is never overwritten (first
+    /// answer wins): [`Error::AlreadyDecided`], unless the owner reopened the task (un-ticked it).
     pub fn ask_decision(
         &self,
         task_id: &str,
@@ -250,8 +273,21 @@ impl Project {
             if !s.task_ids().contains(task_id) {
                 return Err(Error::NotFound(format!("task {task_id}")));
             }
-            s.task_info.entry(task_id.to_string()).or_default().decision =
-                Some(TaskDecision { question, options: opts, recommended, asked_by: by.into(), ..Default::default() });
+            let reopened = !s.done_task_ids().contains(task_id);
+            let info = s.task_info.entry(task_id.to_string()).or_default();
+            if let Some(d) = &info.decision
+                && let Some(c) = &d.choice
+                && !reopened
+            {
+                return Err(Error::AlreadyDecided {
+                    task_id: task_id.into(),
+                    what: "decision",
+                    by: d.by.clone(),
+                    at: d.at.clone(),
+                    value: c.clone(),
+                });
+            }
+            info.decision = Some(TaskDecision { question, options: opts, recommended, asked_by: by.into(), ..Default::default() });
             mark_done(s, task_id, false)
         })
     }

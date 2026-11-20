@@ -93,6 +93,8 @@ fn first_decision_answer_wins() {
     p.answer_decision("B-01", "Yes", "me").unwrap();
     let e = p.answer_decision("B-01", "No", "telegram:bob").unwrap_err();
     assert!(matches!(&e, Error::AlreadyDecided { what: "decision", by, value, .. } if by == "me" && value == "Yes"), "{e:?}");
+    assert!(matches!(p.ask_decision("B-01", "Again?", opts.clone(), None, "claude"), Err(Error::AlreadyDecided { .. })));
+    p.set_task_done("B-01", false).unwrap();
     p.ask_decision("B-01", "Again?", opts, None, "claude").unwrap();
     p.answer_decision("B-01", "No", "me").unwrap();
 }

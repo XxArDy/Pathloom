@@ -74,7 +74,8 @@ The user reads the plan as a picture, left to right. Follow these rules whenever
 - `evidence.commit` (7-40 hex sha) ties a check to the commit it ran on. `list_commits {stage?, limit?}` returns git
   commits whose subject starts with a stage or task id (`AUTH-02: ...`, `AUTH-02, 03: ...`, `AUTH: ...`).
 - `import_tasks {format: "spec-kit", text}` turns a Spec Kit `tasks.md` into stages (phases), tasks and dependencies. Other formats: `md`, `csv`, `notion`, `trello`; `dry_run` / `propose` as for `apply`.
-- `export_plan {format: "md"|"csv"|"github"}` returns the plan as text. `list_history` / `revert_change {id}` list and undo one logged change (CONFLICT when its files changed since).
+- `export_plan {format: "md"|"csv"|"github"|"html"}` returns the plan as text. `list_history` / `revert_change {id}` list and undo one logged change (CONFLICT when its files changed since; FORBIDDEN in review mode, where the owner reverts).
+- `decide_proposal {id, approve, human, comment?}` only relays a decision a human made in your client: it needs the `allow_client_answers` setting, names that human, and is FORBIDDEN on a proposal you wrote yourself.
 
 ## Identity and sessions
 - `register_agent {name?, color?, avatar?, kind?}` sets your own display profile (id = your caller name; `name` up to 40 chars, `color` `#rgb`/`#rrggbb`,

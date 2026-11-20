@@ -23,6 +23,25 @@ separately as `pathloom/1`.
 ### Changed
 - A second answer to an already decided approval or decision now fails with `ALREADY_DECIDED` (details: who, when, and the state or choice) instead of overwriting the first answer. The first answer wins, in the app, CLI, MCP and Telegram.
 
+### Security
+- History revert refuses entries whose paths point outside `plan/` (a tampered history file could overwrite any file).
+- Agents cannot approve their own proposals, mark a task `accepted`, overwrite an answered decision, or revert changes in review mode. `decide_proposal` over MCP only relays a named human's answer when client answers are allowed.
+- Telegram and client relays can only answer a pending approval request.
+- `pathloom://` links: UNC and `\\?\` project paths are refused, and opening a project you never opened asks first.
+- More dangerous link schemes and executable file types are blocked; exported HTML carries a strict Content-Security-Policy.
+- Git: branch names can no longer be read as options, and untracked files no longer block the owner queue.
+- Read-only MCP capabilities list only tools that a read-only server serves.
+
+### Fixed
+- File locks use OS locks: a crashed process no longer leaves a lock that blocks for minutes.
+- The desktop app logs its own edits (tasks, stages, links, files, images, boards), so reverting an agent's change keeps the owner's earlier edits, and approvals made in the app count in the digest.
+- Importing a Trello board with a non-ASCII due date no longer crashes.
+- Telegram: long cards are shortened, a card Telegram refuses no longer blocks the others, and image previews go out only after their card.
+- A repeated session state no longer rewrites the stage file.
+- `.pathloom/.gitignore` of older projects gets the newer machine-state files.
+- The desktop app can import Spec Kit `tasks.md`; app, CLI and MCP share one import/export path.
+- `pathloom decisions --md` is in English.
+
 ## 0.1.0 (beta) - 2026-11-05
 
 First public release.

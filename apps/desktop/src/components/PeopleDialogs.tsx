@@ -175,7 +175,7 @@ function ImportDialog({ close }: { close: () => void }) {
         {path && (
           <label>{t('people.import.format')}{' '}
             <select value={format} onChange={(e) => setFormat(e.target.value as ImportFormat)}>
-              {(['md', 'csv', 'trello', 'notion'] as const).map((f) => <option key={f} value={f}>{t(`people.import.${f}`)}</option>)}
+              {(['md', 'csv', 'trello', 'notion', 'spec-kit'] as const).map((f) => <option key={f} value={f}>{t(`people.import.${f}`)}</option>)}
             </select>
           </label>
         )}

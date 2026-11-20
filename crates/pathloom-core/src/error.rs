@@ -44,6 +44,9 @@ pub enum Error {
     /// `what` is `approval` (`value` = state) or `decision` (`value` = choice).
     #[error("{what} of {task_id} is already decided by {by} at {at}: {value}")]
     AlreadyDecided { task_id: String, what: &'static str, by: String, at: String, value: String },
+    /// The caller may not do this (e.g. an agent deciding its own proposal).
+    #[error("forbidden: {0}")]
+    Forbidden(String),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
