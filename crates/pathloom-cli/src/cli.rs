@@ -136,8 +136,26 @@ pub enum Cmd {
         /// Stage the work was for
         #[arg(long, value_name = "KEY")]
         stage: Option<String>,
+        /// Task the work was for (adds its stage too)
+        #[arg(long, value_name = "ID")]
+        task: Option<String>,
+        #[arg(long)]
+        model: Option<String>,
+        /// Share of the weekly limit used, 0-100
+        #[arg(long)]
+        percent_weekly: Option<f64>,
+        /// When the weekly limit resets (RFC3339)
+        #[arg(long)]
+        resets_at: Option<String>,
         #[arg(long, default_value = "")]
         note: String,
+    },
+    /// Commits whose subject names a stage or task (`AUTH-02: message`)
+    Commits {
+        #[arg(long, value_name = "KEY")]
+        stage: Option<String>,
+        #[arg(long)]
+        limit: Option<usize>,
     },
     /// Import another tool's task list as stages (Spec Kit: specs/<feature>/tasks.md). Re-import updates them
     Import {
@@ -231,6 +249,22 @@ pub enum TaskCmd {
         /// Link or path to the full log
         #[arg(long, requires = "run")]
         log: Option<String>,
+        /// Commit the check ran on (7-40 hex sha)
+        #[arg(long, requires = "run", value_name = "SHA")]
+        commit: Option<String>,
+    },
+    /// Set the delivery status of a task: claimed, pushed, merged, verified or accepted
+    Status {
+        task_id: String,
+        step: String,
+        #[arg(long)]
+        branch: Option<String>,
+        /// Commit, 7-40 hex
+        #[arg(long)]
+        sha: Option<String>,
+        /// Screenshot or log: project-relative path or link (repeat up to 10 times)
+        #[arg(long, value_name = "FILE")]
+        evidence: Vec<String>,
     },
     Undo {
         task_id: String,
@@ -243,6 +277,16 @@ pub enum TaskCmd {
         ttl: String,
         #[arg(long, default_value = "")]
         note: String,
+        /// Who really does the work (model or agent name)
+        #[arg(long)]
+        by: Option<String>,
+        /// Agent that delegated the task
+        #[arg(long)]
+        parent: Option<String>,
+        #[arg(long)]
+        branch: Option<String>,
+        #[arg(long)]
+        worktree: Option<String>,
         /// External client of the session this claim comes from (e.g. maestro)
         #[arg(long, requires = "session_id")]
         session_client: Option<String>,

@@ -469,3 +469,44 @@ fn proposal_subcommand_propose_flag_approve_reject_conflict() {
     assert_eq!(v["state"], "conflict");
     assert_eq!(p.json(&["proposal", "list", "--state", "conflict"])["proposals"].as_array().unwrap().len(), 1);
 }
+
+#[test]
+fn status_commits_and_usage_quota() {
+    let p = Proj::new();
+    let file = p.dir.path().join("s.yaml");
+    std::fs::write(&file, "stages: [{id: A, title: Alpha, tasks: [one, two]}]").unwrap();
+    p.json(&["apply", file.to_str().unwrap()]);
+    let v = p.json(&["task", "claim", "A-01", "--by", "opus", "--parent", "lead", "--branch", "feat/x", "--worktree", "wt/a"]);
+    assert_eq!((v["by"].as_str(), v["worktree"].as_str()), (Some("opus"), Some("wt/a")));
+    assert_eq!(p.json(&["claims"])["claims"][0]["stale"], false);
+    let v = p.json(&["task", "status", "A-01", "pushed", "--branch", "feat/x", "--sha", "3f2a9c1", "--evidence", "shots/a.png"]);
+    assert_eq!(v["status"]["step"], "pushed");
+    assert!(!p.run(&["task", "status", "A-01", "pushed", "--sha", "xyz"]).status.success());
+    assert!(!p.run(&["task", "status", "A-01", "nope"]).status.success());
+    p.json(&["usage", "--tokens-in", "10", "--tokens-out", "2", "--task", "A-01", "--model", "opus"]);
+    p.json(&["usage", "--percent-weekly", "30", "--resets-at", "2026-11-27T00:00:00Z"]);
+    p.json(&["usage", "--percent-weekly", "55"]);
+    let u = p.json(&["usage"]);
+    assert_eq!(u["by_stage_model"]["A"]["opus"]["tokens_in"], 10);
+    assert_eq!(u["quota"].as_object().unwrap().values().next().unwrap()["percent_weekly"], 55.0);
+
+    // commits need git: the temp project becomes a repo (skipped when git is missing)
+    let git = |args: &[&str]| {
+        Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"])
+            .args(args)
+            .current_dir(p.dir.path())
+            .output()
+    };
+    if git(&["init", "-q"]).is_ok_and(|o| o.status.success()) {
+        git(&["add", "-A"]).unwrap();
+        git(&["commit", "-q", "-m", "A-01: first"]).unwrap();
+        git(&["commit", "-q", "--allow-empty", "-m", "unrelated"]).unwrap();
+        git(&["commit", "-q", "--allow-empty", "-m", "ZZ-01: unknown stage"]).unwrap();
+        let v = p.json(&["commits"]);
+        let list = v["commits"].as_array().unwrap();
+        assert_eq!(list.len(), 1, "{v}");
+        assert_eq!(list[0]["tasks"][0], "A-01");
+        assert_eq!(p.json(&["commits", "--stage", "B"])["commits"].as_array().unwrap().len(), 0);
+    }
+}

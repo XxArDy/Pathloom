@@ -201,11 +201,14 @@ pub struct TaskInfo {
     /// Attached files: project-relative paths or http(s) links, up to 20.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<String>,
+    /// Delivery status (`set_task_status`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<crate::taskstatus::TaskStatus>,
 }
 
 impl TaskInfo {
     pub fn is_empty(&self) -> bool {
-        self.note.trim().is_empty() && self.files.is_empty()
+        self.note.trim().is_empty() && self.files.is_empty() && self.status.is_none()
     }
 }
 

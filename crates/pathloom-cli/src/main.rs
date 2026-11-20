@@ -30,7 +30,7 @@ fn main() -> ExitCode {
 }
 
 /// Run `cmd` through the system shell with inherited output and record it as evidence.
-fn run_check(cmd: &str, summary: &Option<String>, log: &Option<String>) -> ApiResult<pathloom_core::Evidence> {
+fn run_check(cmd: &str, summary: &Option<String>, log: &Option<String>, commit: &Option<String>) -> ApiResult<pathloom_core::Evidence> {
     let mut c = if cfg!(windows) {
         let mut c = std::process::Command::new("cmd");
         c.args(["/C", cmd]);
@@ -49,6 +49,7 @@ fn run_check(cmd: &str, summary: &Option<String>, log: &Option<String>) -> ApiRe
         duration_ms: Some(u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)),
         summary: summary.clone(),
         log: log.clone(),
+        commit: commit.clone(),
         at: String::new(),
         by: String::new(),
     })
@@ -275,7 +276,7 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
             let done = matches!(cli.command, Cmd::Task(TaskCmd::Done { .. }));
             let p = open(cli)?;
             let evidence = match &cli.command {
-                Cmd::Task(TaskCmd::Done { run: Some(cmd), summary, log, .. }) => Some(run_check(cmd, summary, log)?),
+                Cmd::Task(TaskCmd::Done { run: Some(cmd), summary, log, commit, .. }) => Some(run_check(cmd, summary, log, commit)?),
                 _ => None,
             };
             if let Some(e) = evidence.as_ref().filter(|e| !e.passed()) {
@@ -302,7 +303,23 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
                 )
             });
         }
-        Cmd::Task(TaskCmd::Claim { task_id, ttl, note, session_client, session_id, session_url, session_title }) => {
+        Cmd::Task(TaskCmd::Status { task_id, step, branch, sha, evidence }) => {
+            let v = ops::set_task_status(&open(cli)?, &actor, task_id, step, branch.as_deref(), sha.as_deref(), evidence)?;
+            emit(cli, &v, || format!("{task_id} status: {step}"));
+        }
+        Cmd::Commits { stage, limit } => {
+            let v = ops::commits(&open(cli)?, stage.as_deref(), *limit)?;
+            emit(cli, &v, || {
+                let rows: Vec<String> = v["commits"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|c| format!("{} {}", s(c, "sha").chars().take(7).collect::<String>(), s(c, "subject")))
+                    .collect();
+                if rows.is_empty() { "No commits linked to stages.".into() } else { rows.join("\n") }
+            });
+        }
+        Cmd::Task(TaskCmd::Claim { task_id, ttl, note, by, parent, branch, worktree, session_client, session_id, session_url, session_title }) => {
             let session = session_client.as_ref().zip(session_id.as_ref()).map(|(c, i)| SessionRef {
                 client: c.clone(),
                 id: i.clone(),
@@ -310,7 +327,8 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
                 title: session_title.clone(),
             });
             let actor = actor.clone().with_session(session)?;
-            let v = ops::claim_task(&open(cli)?, &actor, task_id, ops::parse_ttl(ttl)?, note)?;
+            let d = pathloom_core::Delegation { by: by.clone(), parent: parent.clone(), branch: branch.clone(), worktree: worktree.clone() };
+            let v = ops::claim_task(&open(cli)?, &actor, task_id, ops::parse_ttl(ttl)?, note, &d)?;
             emit(cli, &v, || format!("Claimed {task_id} for {} until {}", actor.name, s(&v, "expires_at")));
         }
         Cmd::Task(TaskCmd::Heartbeat { task_id, note }) => {
@@ -330,7 +348,7 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
             let p = open(cli)?;
             let st = p.load_stage(key)?;
             let check = st.check.clone().ok_or_else(|| ApiError::new("INVALID_SPEC", format!("{key} has no `check` command")))?;
-            let ev = run_check(&check, &None, &None)?;
+            let ev = run_check(&check, &None, &None, &None)?;
             let v = ops::set_gate(&p, &actor, key, ev)?;
             emit(cli, &v, || {
                 if v["passed"] == true { format!("Gate {key} passed") } else { format!("Gate {key} FAILED: `{check}`") }
@@ -339,11 +357,18 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
                 return Ok(ExitCode::FAILURE);
             }
         }
-        Cmd::Usage { tokens_in, tokens_out, cost, stage, note } => {
+        Cmd::Usage { tokens_in, tokens_out, cost, stage, task, model, percent_weekly, resets_at, note } => {
             let p = open(cli)?;
-            let v = if tokens_in.is_some() || tokens_out.is_some() || cost.is_some() {
-                let u = pathloom_core::Usage { tokens_in: tokens_in.unwrap_or(0), tokens_out: tokens_out.unwrap_or(0), cost_usd: *cost };
-                ops::report_usage(&p, &actor, u, stage.as_deref(), note)?
+            let v = if tokens_in.is_some() || tokens_out.is_some() || cost.is_some() || percent_weekly.is_some() {
+                let u = pathloom_core::Usage {
+                    tokens_in: tokens_in.unwrap_or(0),
+                    tokens_out: tokens_out.unwrap_or(0),
+                    cost_usd: *cost,
+                    model: model.clone(),
+                    percent_weekly: *percent_weekly,
+                    resets_at: resets_at.clone(),
+                };
+                ops::report_usage(&p, &actor, u, stage.as_deref(), task.as_deref(), note)?
             } else {
                 ops::usage_summary(&p)?
             };
@@ -361,6 +386,16 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
                         out.push(title.into());
                         out.extend(m.iter().map(|(n, u)| row(&format!("  {n}"), u)));
                     }
+                }
+                if let Some(m) = v["by_stage_model"].as_object().filter(|m| !m.is_empty()) {
+                    out.push("by stage and model:".into());
+                    for (st, models) in m {
+                        out.extend(models.as_object().into_iter().flatten().map(|(n, u)| row(&format!("  {st}/{n}"), u)));
+                    }
+                }
+                if let Some(m) = v["quota"].as_object().filter(|m| !m.is_empty()) {
+                    out.push("weekly limit:".into());
+                    out.extend(m.iter().map(|(n, q)| format!("  {n:<16} {}%  resets {}", q["percent_weekly"], s(q, "resets_at"))));
                 }
                 out.join("\n")
             });

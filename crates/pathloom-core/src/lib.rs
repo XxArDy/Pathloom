@@ -26,6 +26,7 @@ mod protocol;
 mod session;
 mod stagefile;
 mod status;
+mod taskstatus;
 mod validate;
 pub mod writes;
 
@@ -35,8 +36,9 @@ pub use apply::{
     UnlinkSpec,
 };
 pub use board::BOARD_FORMAT;
-pub use claims::{Claim, ClaimView, DEFAULT_CLAIM_TTL_SECS, MAX_CLAIM_TTL_SECS, SILENT_AFTER_SECS};
-pub use log::{LogEntry, Usage, UsageSummary};
+pub use taskstatus::{TaskStatus, TaskStep};
+pub use claims::{Claim, ClaimView, Delegation, STALE_AFTER_SECS, DEFAULT_CLAIM_TTL_SECS, MAX_CLAIM_TTL_SECS, SILENT_AFTER_SECS};
+pub use log::{LogEntry, Quota, Usage, UsageSummary};
 pub use fsutil::{now_rfc3339, write_file_atomic};
 pub use hash::hash_bytes;
 pub use next::NextTask;

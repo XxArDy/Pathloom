@@ -56,7 +56,15 @@ The user reads the plan as a picture, left to right. Follow these rules whenever
   `get_stage` returns them as `artifacts`.
 - `kind: gate` stages have `check` (a command). Run it yourself and report with `set_gate {key, evidence}`:
   exit code 0 makes the gate done, anything else reopens it.
-- Optional `report_usage {tokens_in, tokens_out, cost_usd?, stage?, note?}`: the app sums it per agent and stage.
+- Optional `report_usage {tokens_in?, tokens_out?, cost_usd?, stage?, task_id?, model?, percent_weekly?, resets_at?, note?}`:
+  the app sums it per agent, stage and model (`task_id` adds the task and its stage); `percent_weekly` (0-100) and
+  `resets_at` report your weekly limit (tokens may then be 0).
+- Delegated work: `claim_task {task_id, by?, parent?, branch?, worktree?}` says who really works (model), who delegated,
+  and where. A claim with no heartbeat for 30 minutes is shown as stale.
+- `set_task_status {task_id, status, branch?, sha?, evidence?}` (status: claimed|pushed|merged|verified|accepted; sha 7-40
+  hex; evidence = up to 10 paths/links) shows the delivery pipeline on the task card and counts as a heartbeat.
+- `evidence.commit` (7-40 hex sha) ties a check to the commit it ran on. `list_commits {stage?, limit?}` returns git
+  commits whose subject starts with a stage or task id (`AUTH-02: ...`, `AUTH-02, 03: ...`, `AUTH: ...`).
 - `import_tasks {format: "spec-kit", text}` turns a Spec Kit `tasks.md` into stages (phases), tasks and dependencies.
 
 ## Identity and sessions

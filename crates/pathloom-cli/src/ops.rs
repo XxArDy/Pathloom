@@ -1,7 +1,7 @@
 //! Operations shared by the CLI and the MCP server. Everything returns JSON values and `ApiError`.
 
 use pathloom_core::{
-    AgentProfile, ApplyOptions, ApplySpec, Error, Evidence, LogEntry, Project, SessionRef, Stage, StageView, Status, Who,
+    AgentProfile, ApplyOptions, ApplySpec, Delegation, Error, Evidence, LogEntry, Project, SessionRef, Stage, StageView, Status, Who,
     capabilities, compute_statuses, stage_views,
 };
 use serde::Serialize;
@@ -502,8 +502,8 @@ fn unclaimed_hint(p: &Project, agent: &str, task_ids: &[String]) -> Option<Strin
     })
 }
 
-pub fn claim_task(p: &Project, a: &Actor, task_id: &str, ttl_secs: u64, note: &str) -> ApiResult<Value> {
-    let c = p.claim_task_with(task_id, &a.name, ttl_secs, note, a.session.as_ref())?;
+pub fn claim_task(p: &Project, a: &Actor, task_id: &str, ttl_secs: u64, note: &str, d: &Delegation) -> ApiResult<Value> {
+    let c = p.claim_task_full(task_id, &a.name, ttl_secs, note, a.session.as_ref(), d)?;
     let e = entry("claim_task", format!("claimed {task_id}"), vec![stage_key(task_id)], vec![task_id.into()], vec![]);
     Ok(log(p, a, e, to_v(&c)))
 }
@@ -524,6 +524,7 @@ pub fn claims(p: &Project) -> ApiResult<Value> {
             let mut v = to_v(c);
             v["heartbeat_at"] = json!(c.last_seen());
             v["silent"] = json!(c.is_silent(now));
+            v["stale"] = json!(c.is_stale(now));
             v
         })
         .collect();
@@ -542,7 +543,7 @@ fn unix_now() -> i64 {
 pub fn heartbeat(p: &Project, a: &Actor, task_id: Option<&str>, note: Option<&str>) -> ApiResult<Value> {
     match (p.heartbeat(&a.name, task_id, note), task_id) {
         (Err(Error::NotFound(_)), Some(t)) => {
-            let c = claim_task(p, a, t, 0, note.unwrap_or(""))?;
+            let c = claim_task(p, a, t, 0, note.unwrap_or(""), &Delegation::default())?;
             Ok(json!({"agent": a.name, "claims": [c], "claimed": t}))
         }
         (r, _) => Ok(json!({"agent": a.name, "claims": r?})),
@@ -563,10 +564,61 @@ pub fn set_gate(p: &Project, a: &Actor, key: &str, mut evidence: Evidence) -> Ap
     Ok(log(p, a, e, v))
 }
 
-/// An agent reports the tokens / cost of its work (optionally for a stage). Pathloom only stores and sums it.
-pub fn report_usage(p: &Project, a: &Actor, usage: pathloom_core::Usage, stage: Option<&str>, note: &str) -> ApiResult<Value> {
+/// Set the delivery status of a task and refresh the actor's claims (via the log call).
+pub fn set_task_status(
+    p: &Project,
+    a: &Actor,
+    task_id: &str,
+    step: &str,
+    branch: Option<&str>,
+    sha: Option<&str>,
+    evidence: &[String],
+) -> ApiResult<Value> {
+    let step: pathloom_core::TaskStep = step.parse()?;
+    let s = p.set_task_status(task_id, step, branch, sha, evidence, &a.name)?;
+    let st = s.task_info.get(task_id).and_then(|i| i.status.clone());
+    let e = entry("set_task_status", format!("{task_id} {}", step_name(&st)), vec![s.key.clone()], vec![task_id.into()], vec![stage_file(p, &s.key)]);
+    Ok(log(p, a, e, json!({"task_id": task_id, "status": st})))
+}
+
+fn step_name(st: &Option<pathloom_core::TaskStatus>) -> String {
+    st.as_ref().and_then(|s| serde_json::to_value(s.step).ok()).and_then(|v| v.as_str().map(String::from)).unwrap_or_default()
+}
+
+/// Commits whose subject names a stage or task (`AUTH-02: ...`), newest first; `stage` filters. Read-only.
+pub fn commits(p: &Project, stage: Option<&str>, limit: Option<usize>) -> ApiResult<Value> {
+    let keys: std::collections::HashSet<String> = p.load_stages()?.into_iter().map(|s| s.key).collect();
+    let list: Vec<Value> = pathloom_core::commits::scan(&p.root, limit.unwrap_or(50).clamp(1, 500), &keys)
+        .into_iter()
+        .filter(|c| stage.is_none_or(|k| c.stages.iter().any(|s| s == k)))
+        .map(|c| json!({"sha": c.sha, "subject": c.subject, "author": c.author, "at": c.at, "stages": c.stages, "tasks": c.tasks}))
+        .collect();
+    Ok(json!({"commits": list}))
+}
+
+/// An agent reports the tokens / cost of its work (optionally for a stage or task). Pathloom only stores and sums it.
+/// `task_id` adds the task and its stage to the log entry.
+pub fn report_usage(
+    p: &Project,
+    a: &Actor,
+    usage: pathloom_core::Usage,
+    stage: Option<&str>,
+    task_id: Option<&str>,
+    note: &str,
+) -> ApiResult<Value> {
     usage.validate()?;
-    if let Some(k) = stage {
+    let mut stages: Vec<String> = stage.map(String::from).into_iter().collect();
+    if let Some(t) = task_id {
+        let key = stage_key(t);
+        let st = p.load_stage(&key).map_err(|_| Error::NotFound(format!("task {t}")))?;
+        if !st.task_ids().contains(t) {
+            return Err(Error::NotFound(format!("task {t}")).into());
+        }
+        if !stages.contains(&key) {
+            stages.push(key);
+        }
+    }
+    for k in &stages {
         p.load_stage(k)?;
     }
     let note = note.replace(['\r', '\n'], " ");
@@ -574,10 +626,16 @@ pub fn report_usage(p: &Project, a: &Actor, usage: pathloom_core::Usage, stage: 
     if let Some(c) = usage.cost_usd {
         summary.push_str(&format!(", ${c:.2}"));
     }
+    if let Some(m) = &usage.model {
+        summary.push_str(&format!(" [{m}]"));
+    }
+    if let Some(w) = usage.percent_weekly {
+        summary.push_str(&format!(", weekly limit {w}%"));
+    }
     if !note.trim().is_empty() {
         summary.push_str(&format!(" ({})", note.trim()));
     }
-    let mut e = entry("usage", summary, stage.map(|k| vec![k.to_string()]).unwrap_or_default(), vec![], vec![]);
+    let mut e = entry("usage", summary, stages, task_id.map(|t| vec![t.to_string()]).unwrap_or_default(), vec![]);
     e.usage = Some(usage);
     Ok(log(p, a, e, json!({"recorded": true})))
 }

@@ -17,6 +17,8 @@ pub const DEFAULT_CLAIM_TTL_SECS: u64 = 30 * 60;
 pub const MAX_CLAIM_TTL_SECS: u64 = 8 * 3600;
 /// A claim whose agent sent no heartbeat (or action) for this long is shown as "silent, maybe stuck".
 pub const SILENT_AFTER_SECS: i64 = 10 * 60;
+/// No heartbeat for this long: the claim is shown as stale (the agent is probably gone).
+pub const STALE_AFTER_SECS: i64 = 30 * 60;
 
 const CLAIMS_FILE: &str = ".pathloom/claims.json";
 const GITIGNORE: &str = ".pathloom/.gitignore";
@@ -37,9 +39,46 @@ pub struct Claim {
     /// Last sign of life from the agent (claim, heartbeat or any logged action). Older files lack it: `at` counts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub heartbeat_at: Option<String>,
+    /// Who really does the work (model or agent name), up to 64 characters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
+    /// Id of the agent that delegated the task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    /// Git branch of the work, up to 200 characters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    /// Worktree folder of the work, up to 500 characters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<String>,
+}
+
+/// Optional delegation details of a claim.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Delegation {
+    pub by: Option<String>,
+    pub parent: Option<String>,
+    pub branch: Option<String>,
+    pub worktree: Option<String>,
+}
+
+/// One line, trimmed, at most `max` characters; empty is `None`.
+fn field(name: &str, v: &Option<String>, max: usize) -> Result<Option<String>> {
+    let Some(s) = v.as_deref().map(|s| s.replace(['\r', '\n'], " ").trim().to_string()).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+    if s.chars().count() > max || s.chars().any(char::is_control) {
+        return Err(Error::InvalidSpec(format!("claim {name} must be at most {max} characters")));
+    }
+    Ok(Some(s))
 }
 
 impl Claim {
+    /// No heartbeat for [`STALE_AFTER_SECS`] at time `now` (unix seconds).
+    pub fn is_stale(&self, now: i64) -> bool {
+        self.last_seen() < format_secs(now - STALE_AFTER_SECS).as_str()
+    }
+
     /// Last sign of life: `heartbeat_at`, else `at`.
     pub fn last_seen(&self) -> &str {
         self.heartbeat_at.as_deref().unwrap_or(&self.at)
@@ -69,11 +108,27 @@ pub struct ClaimView {
     pub silent: bool,
     #[serde(default)]
     pub note: String,
+    /// No heartbeat for 30 minutes when the view was built.
+    #[serde(default)]
+    pub stale: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<String>,
 }
 
 impl ClaimView {
     fn of(c: &Claim, now: i64) -> Self {
         ClaimView {
+            stale: c.is_stale(now),
+            by: c.by.clone(),
+            parent: c.parent.clone(),
+            branch: c.branch.clone(),
+            worktree: c.worktree.clone(),
             task_id: c.task_id.clone(),
             agent: c.agent.clone(),
             expires_at: c.expires_at.clone(),
@@ -182,14 +237,28 @@ impl Project {
         note: &str,
         session: Option<&SessionRef>,
     ) -> Result<Claim> {
-        self.claim_inner(task_id, agent, ttl_secs, note, session, now_secs())
+        self.claim_task_full(task_id, agent, ttl_secs, note, session, &Delegation::default())
+    }
+
+    /// Like [`Project::claim_task_with`] plus delegation details. A renewal keeps the details the new call omits.
+    pub fn claim_task_full(
+        &self,
+        task_id: &str,
+        agent: &str,
+        ttl_secs: u64,
+        note: &str,
+        session: Option<&SessionRef>,
+        deleg: &Delegation,
+    ) -> Result<Claim> {
+        self.claim_inner(task_id, agent, ttl_secs, note, session, deleg, now_secs())
     }
 
     #[cfg(test)]
     pub(crate) fn claim_task_at(&self, task_id: &str, agent: &str, ttl_secs: u64, note: &str, now: i64) -> Result<Claim> {
-        self.claim_inner(task_id, agent, ttl_secs, note, None, now)
+        self.claim_inner(task_id, agent, ttl_secs, note, None, &Delegation::default(), now)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn claim_inner(
         &self,
         task_id: &str,
@@ -197,8 +266,15 @@ impl Project {
         ttl_secs: u64,
         note: &str,
         session: Option<&SessionRef>,
+        deleg: &Delegation,
         now: i64,
     ) -> Result<Claim> {
+        let (by, dparent, branch, worktree) = (
+            field("by", &deleg.by, 64)?,
+            field("parent", &deleg.parent, 64)?,
+            field("branch", &deleg.branch, 200)?,
+            field("worktree", &deleg.worktree, 500)?,
+        );
         let session = session.cloned().map(SessionRef::normalize).transpose()?;
         let agent = agent.trim();
         if agent.is_empty() {
@@ -234,7 +310,7 @@ impl Project {
             });
         }
         let secs = i64::try_from(ttl).unwrap_or(i64::MAX / 2);
-        let claim = Claim {
+        let mut claim = Claim {
             task_id: task_id.into(),
             agent: agent.into(),
             at: now_s.clone(),
@@ -242,7 +318,17 @@ impl Project {
             note: note.replace(['\r', '\n'], " ").trim().into(),
             session: session.clone(),
             heartbeat_at: Some(now_s.clone()),
+            by,
+            parent: dparent,
+            branch,
+            worktree,
         };
+        if let Some(old) = claims.iter().find(|c| c.task_id == task_id && c.agent == agent) {
+            claim.by = claim.by.or_else(|| old.by.clone());
+            claim.parent = claim.parent.or_else(|| old.parent.clone());
+            claim.branch = claim.branch.or_else(|| old.branch.clone());
+            claim.worktree = claim.worktree.or_else(|| old.worktree.clone());
+        }
         claims.retain(|c| c.task_id != task_id);
         claims.push(claim.clone());
         self.write_claims(claims)?;
@@ -470,6 +556,34 @@ mod tests {
         old[0].heartbeat_at = None;
         p.write_claims(old).unwrap();
         assert_eq!(p.read_claims_raw()[0].last_seen(), format_secs(T0));
+    }
+
+    #[test]
+    fn delegation_round_trip_stale_and_old_files() {
+        let (d, p) = setup();
+        let dg = Delegation { by: Some(" opus ".into()), parent: Some("lead".into()), branch: Some("feat/x".into()), worktree: None };
+        let c = p.claim_inner("A-01", "claude", 60, "", None, &dg, T0).unwrap();
+        assert_eq!((c.by.as_deref(), c.parent.as_deref(), c.branch.as_deref(), c.worktree.as_deref()), (Some("opus"), Some("lead"), Some("feat/x"), None));
+        assert_eq!(p.read_claims_raw()[0], c);
+        // renewal without details keeps them
+        let c2 = p.claim_inner("A-01", "claude", 60, "", None, &Delegation::default(), T0 + 5).unwrap();
+        assert_eq!(c2.by.as_deref(), Some("opus"));
+        // length limits
+        let long = Delegation { branch: Some("b".repeat(201)), ..Default::default() };
+        assert!(matches!(p.claim_inner("A-01", "claude", 60, "", None, &long, T0), Err(Error::InvalidSpec(_))));
+        // stale is later than silent
+        assert!(c2.is_silent(T0 + 5 + SILENT_AFTER_SECS + 1) && !c2.is_stale(T0 + 5 + SILENT_AFTER_SECS + 1));
+        assert!(!c2.is_stale(T0 + 5 + STALE_AFTER_SECS) && c2.is_stale(T0 + 5 + STALE_AFTER_SECS + 1));
+        // old claims.json without the new fields still loads
+        std::fs::write(
+            d.path().join(CLAIMS_FILE),
+            r#"{"claims":[{"task_id":"A-01","agent":"x","at":"2020-01-01T00:00:00Z","expires_at":"2099-01-01T00:00:00Z"}]}"#,
+        )
+        .unwrap();
+        let old = p.claims().unwrap();
+        assert_eq!((old.len(), old[0].by.clone()), (1, None));
+        let v = ClaimView::of(&old[0], T0);
+        assert!(v.stale && v.by.is_none());
     }
 
     #[test]
