@@ -6,3 +6,4 @@ dist/
 apps/desktop/src-tauri/gen/
 .playwright-mcp/
 apps/desktop/src-tauri/binaries/
+.claude/worktrees/

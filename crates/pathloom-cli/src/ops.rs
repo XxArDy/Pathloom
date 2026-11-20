@@ -51,6 +51,7 @@ impl From<Error> for ApiError {
             | Error::Parse { .. }
             | Error::AlreadyInitialized(_) => ("INVALID_SPEC", Value::Null),
             Error::Io(_) => ("IO_ERROR", Value::Null),
+            Error::Git(_) => ("GIT_ERROR", Value::Null),
         };
         ApiError { code, message, details }
     }
