@@ -278,7 +278,7 @@ fn project_info_protocol_capabilities_and_read_only() {
     let mut ro = Client::start(d.path(), &["--read-only"]);
     ro.handshake();
     let (_, v) = ro.call("project_info", json!({}));
-    assert_eq!(v["capabilities"], json!(["read", "activity", "events", "validate", "commits"]));
+    assert_eq!(v["capabilities"], json!(["read", "activity", "events", "validate", "commits", "agenda", "digest"]));
     let (err, v) = ro.call("list_commits", json!({}));
     assert!(!err, "{v}");
     assert!(v["commits"].is_array());

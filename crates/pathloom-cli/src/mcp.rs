@@ -114,6 +114,12 @@ struct ActivityParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct AgendaParams {
+    /// Window in days from today (default 1, max 366)
+    days: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct SearchParams {
     /// Case-insensitive text to find in keys, titles, descriptions and task titles
     query: String,
@@ -501,6 +507,14 @@ impl PathloomServer {
     )]
     async fn activity(&self, Parameters(a): Parameters<ActivityParams>) -> CallToolResult {
         finish(self.project().and_then(|p| ops::activity(&p, a.limit.unwrap_or(0), a.stage.as_deref())))
+    }
+
+    #[tool(
+        description = "Agenda for the owner: overdue stages, stages due within `days` (default 1 = today), blocked stages, and what waits for the owner (inbox). Done stages are left out.",
+        annotations(read_only_hint = true)
+    )]
+    async fn agenda(&self, Parameters(a): Parameters<AgendaParams>) -> CallToolResult {
+        finish(self.project().and_then(|p| crate::agenda::agenda(&p, a.days.unwrap_or(1))))
     }
 
     #[tool(

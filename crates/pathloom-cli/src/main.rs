@@ -1,5 +1,6 @@
 //! `pathloom`: CLI and MCP server for Pathloom projects.
 
+mod agenda;
 mod cli;
 mod mcp;
 mod ops;
@@ -660,6 +661,14 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
                     if rows.is_empty() { "No decisions.".into() } else { rows.join("\n") }
                 });
             }
+        }
+        Cmd::Today { week } => {
+            let v = agenda::agenda(&open(cli)?, if *week { 7 } else { 1 })?;
+            emit(cli, &v, || s(&v, "markdown").to_string());
+        }
+        Cmd::Digest { since, md } => {
+            let v = agenda::digest(&open(cli)?, since.as_deref())?;
+            if *md { println!("{}", s(&v, "markdown")) } else { emit(cli, &v, || s(&v, "markdown").to_string()) }
         }
         Cmd::Telegram => telegram::run(&open(cli)?)?,
         Cmd::Inbox => {

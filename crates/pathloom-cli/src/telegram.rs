@@ -68,6 +68,32 @@ struct State {
     offset: i64,
     #[serde(default)]
     sent: BTreeMap<String, String>,
+    /// Local date (`YYYY-MM-DD`) the daily digest was last sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    digest_sent: Option<String>,
+}
+
+/// Send the digest now? Once per local day, at or after `cfg` (`HH:MM`); a malformed `cfg` never sends.
+fn should_send_digest(now_hhmm: &str, today: &str, last_sent: Option<&str>, cfg: Option<&str>) -> bool {
+    let ok = |t: &str| {
+        t.len() == 5 && t.as_bytes()[2] == b':' && matches!((t[..2].parse::<u8>(), t[3..].parse::<u8>()), (Ok(h), Ok(m)) if h < 24 && m < 60)
+    };
+    // Zero-padded HH:MM compares in time order.
+    cfg.is_some_and(|c| ok(c) && ok(now_hhmm) && now_hhmm >= c) && last_sent != Some(today)
+}
+
+fn send_digest(bot: &Bot, p: &Project, chat: &str, st: &mut State) -> Result<(), String> {
+    let now = chrono::Local::now();
+    let cfg = p.config.telegram.as_ref().and_then(|t| t.digest.as_deref());
+    let today = now.format("%Y-%m-%d").to_string();
+    if !should_send_digest(&now.format("%H:%M").to_string(), &today, st.digest_sent.as_deref(), cfg) {
+        return Ok(());
+    }
+    let v = crate::agenda::digest(p, None).map_err(|e| e.message)?;
+    let text = v["markdown"].as_str().unwrap_or_default();
+    bot.call("sendMessage", &json!({"chat_id": chat, "text": text}), 30)?;
+    st.digest_sent = Some(today);
+    st.save(p).map_err(|e| e.to_string())
 }
 
 impl State {
@@ -293,6 +319,9 @@ pub fn run(p: &Project) -> ApiResult<()> {
         if let Err(e) = send_new(&bot, p, &chat, &mut st) {
             eprintln!("telegram: {e}");
         }
+        if let Err(e) = send_digest(&bot, p, &chat, &mut st) {
+            eprintln!("telegram: digest: {e}");
+        }
         let params = json!({"offset": st.offset, "timeout": POLL_SECS, "allowed_updates": ["callback_query"]});
         match bot.call("getUpdates", &params, POLL_SECS + 15) {
             Ok(v) => {
@@ -374,6 +403,26 @@ mod tests {
         // Same task requested again later is sent again.
         let again = vec![view("t1", "2026-02-02T00:00:00Z")];
         assert_eq!(to_send(&again, &st).len(), 1);
+    }
+
+    #[test]
+    fn digest_schedule() {
+        let s = should_send_digest;
+        assert!(!s("08:59", "2026-11-20", None, Some("09:00")));
+        assert!(s("09:00", "2026-11-20", None, Some("09:00")));
+        assert!(s("23:30", "2026-11-20", Some("2026-11-19"), Some("09:00"))); // late start still sends
+        assert!(!s("10:00", "2026-11-20", Some("2026-11-20"), Some("09:00"))); // once a day
+        assert!(!s("10:00", "2026-11-20", None, None));
+        for bad in ["9:00", "24:00", "09:60", "ab:cd", ""] {
+            assert!(!s("10:00", "2026-11-20", None, Some(bad)), "{bad}");
+        }
+    }
+
+    #[test]
+    fn old_state_without_digest_field_loads() {
+        let st: State = serde_json::from_str(r#"{"offset":3,"sent":{"t":"x"}}"#).unwrap();
+        assert_eq!((st.offset, st.digest_sent.as_deref()), (3, None));
+        assert!(!serde_json::to_string(&st).unwrap().contains("digest_sent"));
     }
 
     #[test]

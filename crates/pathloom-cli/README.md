@@ -38,6 +38,8 @@ pathloom approval request <ID> [--file F]... [--note T] | approve <ID> [--commen
 pathloom decision ask <ID> --question Q --option "label|description"... [--recommended N] | answer <ID> "text"
 pathloom decisions [--md]   # all decisions; --md = answered ones as Markdown
 pathloom inbox [--json]     # what waits for the owner: pending approvals, open decisions, owner tasks
+pathloom today [--week] [--json]   # overdue, due today (7 days with --week), blocked, waiting for you
+pathloom digest [--since 24h|7d|RFC3339] [--md] [--json]   # done since, stuck (blocked/overdue/silent agents), waiting
 # `require on`: agents (MCP) cannot close tasks, `set_task done` puts them in review; the human CLI is not limited
 pathloom agent set <id> [--name N] [--color #rrggbb] [--avatar 🤖|assets/f.png] [--kind K] | list | remove <id>
 pathloom watch [--since RFC3339]         # event stream (NDJSON with --json)
@@ -116,6 +118,7 @@ records the answer like `pathloom approval approve|reject` (❌ asks for a reaso
 1. Create a bot with @BotFather and set its token in the environment: `PATHLOOM_TELEGRAM_TOKEN=...` (never stored in the project).
 2. Add your chat id to `.pathloom/project.toml`: `[telegram]` / `chat_id = "123456789"`.
 3. Run `pathloom telegram` and keep it running. Updates from other chats are ignored. Progress is kept in `.pathloom/telegram.json`.
+4. Optional daily digest: `digest = "09:00"` under `[telegram]` sends `pathloom digest --md` once a day at or after that local time (the last sent date is kept in `telegram.json`).
 
 ## MCP server
 
