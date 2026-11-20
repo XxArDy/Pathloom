@@ -245,6 +245,19 @@
     "licenses": "Licenses",
     "licensesOpen": "Pathloom: MIT or Apache-2.0 · third-party licenses…"
   },
+  "proposals": {
+    "button": "Proposals ({{count}})",
+    "title": "Proposals",
+    "creates": "creates",
+    "updates": "updates",
+    "approve": "Approve",
+    "reject": "Reject",
+    "comment": "Comment (optional)",
+    "cancel": "Cancel",
+    "newFile": "new file",
+    "noChanges": "No file changes in this proposal.",
+    "conflict": "The plan changed since this proposal; it was not applied"
+  },
   "agent": {
     "conflict": "This board was changed outside the app while you had unsaved edits.",
     "takeTheirs": "Take theirs",

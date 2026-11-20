@@ -324,3 +324,19 @@ pre.code { font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6; b
 .key-edit { padding: 2px 6px; margin-left: -6px; border-radius: 5px; }
 .key-edit:hover { background: var(--card); color: var(--tx); }
 .key-input { width: 90px; font-size: 12px; text-transform: uppercase; }
+
+.prop-modal { width: min(960px, 94vw); }
+.prop-body { display: flex; min-height: 0; flex: 1; }
+.prop-list { list-style: none; margin: 0; padding: 8px; width: 200px; border-right: 1px solid var(--bd); overflow-y: auto; flex-shrink: 0; }
+.prop-list button { width: 100%; text-align: left; padding: 8px 10px; border-radius: 8px; background: none; border: 0; color: var(--tx); cursor: pointer; }
+.prop-list button.on, .prop-list button:hover { background: var(--card); }
+.prop-detail { flex: 1; min-width: 0; overflow-y: auto; padding: 14px 18px 18px; }
+.prop-keys { font-size: 12.5px; margin-bottom: 10px; line-height: 1.6; }
+.diff { margin-bottom: 12px; border: 1px solid var(--bd); border-radius: 10px; overflow: hidden; }
+.diff-path { font-family: var(--font-mono); font-size: 11.5px; padding: 6px 10px; background: var(--card); border-bottom: 1px solid var(--bd); }
+.diff pre { margin: 0; padding: 6px 0; overflow-x: auto; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.55; }
+.diff .dl { padding: 0 10px; white-space: pre; }
+.diff .dl.add { background: rgba(60,180,100,.18); }
+.diff .dl.del { background: rgba(220,80,80,.18); }
+.prop-comment { width: 100%; margin-top: 6px; padding: 8px; border-radius: 8px; border: 1px solid var(--bd2); background: var(--card); color: var(--tx); font: inherit; resize: vertical; }
+.prop-actions { display: flex; gap: 8px; margin-top: 12px; }

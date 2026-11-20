@@ -5,6 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { Ghost, StageView, Task } from '@pathloom/canvas';
 import { api, errorText } from './api';
 import { editorRef, useApp } from './store';
+import i18n from './i18n';
 
 export interface PlanChanged { stages: string[]; boards: string[]; proposals: boolean; group: number | null }
 
@@ -17,13 +18,14 @@ interface SpecStage {
   id?: string; title?: string; kind?: StageView['kind']; who?: StageView['who']; priority?: StageView['priority'];
   depends?: (string | { id: string; soft?: boolean })[]; tasks?: string[];
 }
-export interface Proposal { id: string; created_at: string; author: string; spec: { board?: string; stages?: SpecStage[] }; preview: ApplyReport }
+export interface Proposal { id: string; created_at: string; author: string; spec: { board?: string; stages?: SpecStage[] }; preview: ApplyReport; changes?: FileChange[] }
+export interface FileChange { path: string; before?: string; after?: string }
 
 export const agentApi = {
   undo: (group: number) => invoke<StageView[]>('agent_undo', { group }),
   proposals: () => invoke<Proposal[]>('proposals_list'),
-  accept: (id: string) => invoke<ApplyReport>('proposal_accept', { id }),
-  reject: (id: string) => invoke<void>('proposal_reject', { id }),
+  decide: (id: string, approve: boolean, comment?: string) =>
+    invoke<Proposal & { decision: { state: string } }>('proposal_decide', { id, approve, comment: comment || null }),
 };
 
 /** Ghost cards for the proposal's new stages on the active board. */
@@ -148,14 +150,11 @@ export async function resolveBoardConflict(take: 'theirs' | 'mine'): Promise<voi
   await reloadActiveBoard();
 }
 
-export async function decideProposal(id: string, accept: boolean): Promise<void> {
+export async function decideProposal(id: string, accept: boolean, comment?: string): Promise<void> {
   const st = useApp.getState();
   await st.flushSave(); // keep the user's pending edits before the proposal rewrites the board
-  if (accept) {
-    await agentApi.accept(id);
-  } else {
-    await agentApi.reject(id);
-  }
+  const d = await agentApi.decide(id, accept, comment);
+  if (d.decision.state === 'conflict') st.set({ error: i18n.t('proposals.conflict') });
   editorRef.current?.setGhosts([]);
   await reloadActiveBoard();
   st.setStages(await api.stagesList());

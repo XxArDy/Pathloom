@@ -1,12 +1,13 @@
 import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { IconX, IconMap, IconPlayerPlay, IconLock, IconLayoutBoard, IconListDetails, IconFocus2, IconChartDonut } from '@tabler/icons-react';
+import { IconX, IconMap, IconPlayerPlay, IconLock, IconLayoutBoard, IconListDetails, IconFocus2, IconChartDonut, IconSparkles } from '@tabler/icons-react';
 import { useApp } from '../store';
 import { Sidebar } from './Sidebar';
 import { CanvasView } from './CanvasView';
 import { Inspector } from './Inspector';
 import { ListView } from './ListView';
 import { SettingsDialog } from './SettingsDialog';
+import { ProposalsDialog } from './ProposalsDialog';
 import { AgentBanner } from './AgentBanner';
 import { OverviewView } from './OverviewView';
 import { CommandPalette } from './CommandPalette';
@@ -62,7 +63,7 @@ function StatusBar() {
 
 export function Workspace() {
   const { t } = useTranslation();
-  const { project, activeBoard, selectedStage, error, view, set } = useApp();
+  const { project, activeBoard, selectedStage, error, view, proposals, set } = useApp();
 
   const handlers = useMemo(() => ({
     'app.focus': () => { const s = useApp.getState(); s.set({ exec: !s.exec, view: 'board' }); },
@@ -94,6 +95,9 @@ export function Workspace() {
             <button role="tab" aria-selected={view === 'list'} className={`btn sm ${view === 'list' ? 'on' : ''}`} onClick={() => set({ view: 'list' })}><IconListDetails size={14} />{t('views.list')}</button>
             <button role="tab" aria-selected={view === 'overview'} className={`btn sm ${view === 'overview' ? 'on' : ''}`} onClick={() => set({ view: 'overview' })}><IconChartDonut size={14} />{t('views.overview')}</button>
           </div>
+          {proposals.length > 0 && (
+            <button className="btn sm pri" onClick={() => set({ proposalsOpen: true })}><IconSparkles size={14} />{t('proposals.button', { count: proposals.length })}</button>
+          )}
         </div>
         <div className="area">
           {activeBoard ? <CanvasView key={activeBoard} /> : null}
@@ -108,6 +112,7 @@ export function Workspace() {
       </section>
       {selectedStage && <Inspector stageKey={selectedStage} />}
       <SettingsDialog />
+      <ProposalsDialog />
       <CommandPalette />
     </div>
   );

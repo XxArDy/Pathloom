@@ -7,7 +7,7 @@ mod watch;
 use std::path::Path;
 use std::sync::{LazyLock, Mutex};
 
-use pathloom_core::{AgentChanges, AgentProfile, ApplyReport, Board, Claim, LogEntry, Project, Proposal, StageMeta, StageView, Task};
+use pathloom_core::{AgentChanges, AgentProfile, Board, Claim, LogEntry, Project, Proposal, StageMeta, StageView, Task};
 use tauri_plugin_opener::OpenerExt;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
@@ -591,21 +591,17 @@ fn proposals_list(state: State<'_, AppState>) -> CmdResult<Vec<Proposal>> {
 }
 
 #[tauri::command]
-fn proposal_accept(state: State<'_, AppState>, id: String) -> CmdResult<ApplyReport> {
+fn proposal_decide(state: State<'_, AppState>, id: String, approve: bool, comment: Option<String>) -> CmdResult<Proposal> {
     with_project(&state, |p| {
-        let report = p.accept_proposal(&id)?;
-        let stages = report.created.iter().chain(&report.updated).cloned().collect();
-        log_app(p, "accept_proposal", &format!("accepted proposal {id}"), stages, report.files.clone());
-        Ok(report)
-    })
-}
-
-#[tauri::command]
-fn proposal_reject(state: State<'_, AppState>, id: String) -> CmdResult<()> {
-    with_project(&state, |p| {
-        p.reject_proposal(&id)?;
-        log_app(p, "reject_proposal", &format!("rejected proposal {id}"), vec![], vec![]);
-        Ok(())
+        let d = p.decide_proposal(&id, approve, comment.as_deref(), "me")?;
+        let st = d.decision.as_ref().map(|x| x.state.as_str()).unwrap_or("decided");
+        let (stages, files) = if st == "approved" {
+            (d.preview.created.iter().chain(&d.preview.updated).cloned().collect(), d.preview.files.clone())
+        } else {
+            (vec![], vec![])
+        };
+        log_app(p, &format!("proposal_{st}"), &format!("{st} proposal {id}"), stages, files);
+        Ok(d)
     })
 }
 
@@ -669,8 +665,7 @@ pub fn run() {
             usage_summary,
             gate_run,
             proposals_list,
-            proposal_accept,
-            proposal_reject,
+            proposal_decide,
             stage_update,
             stage_source,
             stage_delete,
