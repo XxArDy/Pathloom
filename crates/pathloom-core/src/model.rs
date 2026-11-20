@@ -19,6 +19,9 @@ macro_rules! lower_enum {
 lower_enum!(StageKind { Stage = "stage", Milestone = "milestone", Gate = "gate" } default Stage);
 lower_enum!(Priority { Low = "low", Med = "med", High = "high" } default Med);
 lower_enum!(AgentChanges { Auto = "auto", Review = "review" } default Auto);
+lower_enum!(TaskKind { Approval = "approval", Decision = "decision" } default Approval);
+lower_enum!(ApprovalState { Pending = "pending", Approved = "approved", Rejected = "rejected" } default Pending);
+lower_enum!(InboxKind { Approval = "approval", Decision = "decision", Owner = "owner" } default Owner);
 lower_enum!(Status { Done = "done", Active = "active", Ready = "ready", Blocked = "blocked" } default Ready);
 
 /// Who does a stage: `me`, `ai`, `both`, `ai:<name>` (a named agent, `[a-z0-9._-]{1,32}`) or
@@ -151,7 +154,36 @@ impl Stage {
     pub(crate) fn prune_evidence(&mut self) {
         let done: std::collections::HashSet<String> = self.done_task_ids().into_iter().map(String::from).collect();
         let key = self.key.clone();
-        self.evidence.retain(|k, _| done.contains(k) || *k == key);
+        let review: std::collections::HashSet<String> =
+            self.task_info.keys().filter(|k| self.in_review(k)).cloned().collect();
+        self.evidence.retain(|k, _| done.contains(k) || *k == key || review.contains(k));
+    }
+
+    fn find_task(&self, id: &str) -> Option<&Task> {
+        self.tasks.iter().flat_map(|t| std::iter::once(t).chain(t.sub.iter())).find(|t| t.id == id)
+    }
+
+    /// Kind of a task: `task_info.<ID>.kind`, else by the stage key (`APPR` -> approval, `DECIDE` -> decision).
+    pub fn task_kind(&self, id: &str) -> Option<TaskKind> {
+        match self.task_info.get(id).and_then(|i| i.kind) {
+            Some(k) => Some(k),
+            None => match self.key.as_str() {
+                "APPR" => Some(TaskKind::Approval),
+                "DECIDE" => Some(TaskKind::Decision),
+                _ => None,
+            },
+        }
+    }
+
+    /// The task waits for the owner: approval pending and the task is not done (computed, not stored).
+    pub fn in_review(&self, id: &str) -> bool {
+        self.task_info.get(id).and_then(|i| i.approval.as_ref()).is_some_and(|a| a.state == ApprovalState::Pending)
+            && self.find_task(id).is_some_and(|t| !t.is_done())
+    }
+
+    /// Some task of this stage is in review.
+    pub fn has_review(&self) -> bool {
+        self.task_info.keys().any(|k| self.in_review(k))
     }
 
     /// Gate result: the passing check stored under the stage key.
@@ -195,18 +227,78 @@ pub struct Dep {
 /// Extra details of one task, kept in the stage frontmatter (`task_info`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TaskInfo {
+    /// `approval` | `decision`; otherwise derived from the stage key (`APPR`, `DECIDE`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<TaskKind>,
     /// Free text (several lines allowed), up to 4000 characters.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
     /// Attached files: project-relative paths or http(s) links, up to 20.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<String>,
+    /// Owner's approval of the work: pending / approved / rejected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval: Option<Approval>,
+    /// A question to the owner with options and, once answered, the choice.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision: Option<TaskDecision>,
 }
 
 impl TaskInfo {
     pub fn is_empty(&self) -> bool {
-        self.note.trim().is_empty() && self.files.is_empty()
+        self.note.trim().is_empty()
+            && self.files.is_empty()
+            && self.kind.is_none()
+            && self.approval.is_none()
+            && self.decision.is_none()
     }
+}
+
+/// Approval state of a task (`task_info.<ID>.approval`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct Approval {
+    pub state: ApprovalState,
+    /// Up to 10 short reasons of a rejection (`off-theme`, `duplicate`, `quality`, `scale`, `wrong-place`, or your own).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reasons: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub comment: String,
+    /// When and by whom the owner decided.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub at: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub by: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub requested_by: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub requested_at: String,
+}
+
+/// One option of a [`TaskDecision`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct DecisionOption {
+    pub label: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+}
+
+/// A question with options for the owner (`task_info.<ID>.decision`); `choice` is the answer.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct TaskDecision {
+    pub question: String,
+    pub options: Vec<DecisionOption>,
+    /// Index into `options`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recommended: Option<usize>,
+    /// The owner's answer: an option label or free text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub choice: Option<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub at: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub by: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub asked_by: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -323,6 +415,9 @@ pub struct ProjectConfig {
     /// Optional git settings (`[git]` table); absent in old files.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git: Option<GitConfig>,
+    /// Agents (MCP) cannot close tasks: `done` puts them in review until the owner approves.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub require_approval: bool,
 }
 
 fn default_fetch_interval() -> u64 {

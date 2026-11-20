@@ -63,7 +63,7 @@ pub fn compute_statuses(stages: &[Stage]) -> BTreeMap<String, Status> {
             Status::Done
         } else if cx.hard_deps(s).into_iter().any(|k| !cx.is_done(k)) {
             Status::Blocked
-        } else if s.tasks.iter().any(Task::is_done) {
+        } else if s.tasks.iter().any(Task::is_done) || s.has_review() {
             Status::Active
         } else {
             Status::Ready

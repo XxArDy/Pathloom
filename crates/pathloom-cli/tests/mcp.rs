@@ -370,3 +370,72 @@ fn apply_propose_then_list_and_decide() {
     let (err, _) = c.call("list_proposals", json!({"state": "bogus"}));
     assert!(err);
 }
+
+fn cli(dir: &std::path::Path, args: &[&str]) {
+    let o = Command::new(env!("CARGO_BIN_EXE_pathloom")).arg("--project").arg(dir).args(args).output().unwrap();
+    assert!(o.status.success(), "{args:?}: {}", String::from_utf8_lossy(&o.stderr));
+}
+
+#[test]
+fn require_approval_review_and_approval_tools() {
+    let d = project();
+    cli(d.path(), &["approval", "require", "on"]);
+    let mut c = Client::start(d.path(), &[]);
+    c.handshake();
+    let tools = c.request("tools/list", json!({}));
+    let names: Vec<&str> = tools["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
+    for n in ["request_approval", "get_approvals", "ask_decision", "list_decisions"] {
+        assert!(names.contains(&n), "missing tool {n}");
+    }
+    assert!(!names.contains(&"decide_approval"), "agents cannot approve themselves");
+    let spec = json!({"stages": [
+        {"id": "APPR", "title": "Approvals", "tasks": ["Icon"]},
+        {"id": "DECIDE", "title": "Decisions", "tasks": ["DB"]},
+        {"id": "DEV", "title": "Dev", "tasks": ["Build", "Ship"]}]});
+    assert!(!c.call("apply", json!({"spec": spec})).0);
+
+    // set_task done -> review, evidence kept, not done
+    let ev = json!({"command": "cargo test", "exit_code": 0});
+    let (err, v) = c.call("set_task", json!({"task_id": "DEV-01", "done": true, "evidence": ev}));
+    assert!(!err, "{v}");
+    assert_eq!((v["state"].as_str(), v["done"].clone()), (Some("review"), json!(false)));
+    let (_, st) = c.call("get_stage", json!({"key": "DEV"}));
+    assert_eq!(st["tasks"][0]["done"], false);
+    assert_eq!(st["evidence"]["DEV-01"]["command"], "cargo test");
+    assert_eq!(st["taskInfo"]["DEV-01"]["approval"]["state"], "pending");
+    assert_eq!(st["status"], "active");
+
+    // apply tasks_done by an agent -> review as well
+    let (err, v) = c.call("apply", json!({"spec": {"stages": [{"id": "DEV", "tasks_done": ["DEV-02"]}]}}));
+    assert!(!err, "{v}");
+    assert_eq!((v["state"].as_str(), v["review"][0].as_str()), (Some("review"), Some("DEV-02")));
+    assert_eq!(c.call("get_stage", json!({"key": "DEV"})).1["tasks"][1]["done"], false);
+
+    // request_approval, the owner rejects in the CLI, the agent reads reasons and comment
+    let (err, v) = c.call("request_approval", json!({"task_id": "APPR-01", "files": ["shots/a.png"], "note": "icon"}));
+    assert!(!err, "{v}");
+    let (_, v) = c.call("get_approvals", json!({"state": "pending"}));
+    assert_eq!(v["approvals"].as_array().unwrap().len(), 3);
+    cli(d.path(), &["approval", "reject", "APPR-01", "--reason", "scale", "--comment", "Too big"]);
+    let (_, v) = c.call("get_approvals", json!({"state": "rejected"}));
+    let a = &v["approvals"][0];
+    assert_eq!((a["task_id"].as_str(), a["reasons"][0].as_str(), a["comment"].as_str()), (Some("APPR-01"), Some("scale"), Some("Too big")));
+    assert_eq!(a["files"][0], "shots/a.png");
+
+    // decisions
+    let q = json!({"task_id": "DECIDE-01", "question": "Which DB?", "options": [{"label": "SQLite"}, {"label": "Postgres", "description": "server"}], "recommended": 0});
+    let (err, v) = c.call("ask_decision", q);
+    assert!(!err, "{v}");
+    assert_eq!(c.call("list_decisions", json!({"open": true})).1["decisions"].as_array().unwrap().len(), 1);
+    cli(d.path(), &["decision", "answer", "DECIDE-01", "Postgres"]);
+    let (_, v) = c.call("list_decisions", json!({}));
+    assert_eq!(v["decisions"][0]["choice"], "Postgres");
+    assert_eq!(c.call("list_decisions", json!({"open": true})).1["decisions"].as_array().unwrap().len(), 0);
+    assert_eq!(c.call("get_stage", json!({"key": "DECIDE"})).1["taskInfo"]["DECIDE-01"]["decision"]["choice"], "Postgres");
+
+    // read-only server: write tools refuse, reads work
+    let mut r = Client::start(d.path(), &["--read-only"]);
+    r.handshake();
+    assert_eq!(r.call("request_approval", json!({"task_id": "DEV-01"})).1["code"], "READ_ONLY");
+    assert!(!r.call("get_approvals", json!({})).0);
+}

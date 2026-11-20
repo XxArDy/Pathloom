@@ -59,6 +59,8 @@ frames:
    - List hand-off files of a stage (spec, plan, review notes) with `apply` → `stages: [{id, artifacts_add: [specs/auth/spec.md]}]`. A hand-off is an artifact, not a retelling: write the file, then link it.
    - Gate stages (`kind: gate`, with `check: npm test`) are done only when the check passes: run the command, then `set_gate {key, evidence}`.
    - Optional: `report_usage {tokens_in, tokens_out, cost_usd?, stage?}` so the user sees spending per stage and agent.
+   - Need the user to look at work (a screenshot, a design)? `request_approval {task_id, files?, note?}`: the task waits in review. Read `get_approvals`: a `rejected` entry has `reasons` and `comment` (also on the stage); fix and request again. Only the user approves. With `require_approval` on, `set_task done` returns `{"state": "review"}` instead of closing the task.
+   - Need a choice from the user? `ask_decision {task_id, question, options: [{label, description?}], recommended?}`, then read the answer in `list_decisions` (`choice`) or `get_stage`. Do not guess while it is open.
    - Leave short notes with `add_comment` — the user reads them on the card.
    - `activity` shows what other agents and the user did recently. Read it when you start a session.
 4. Keep `branch` on a stage in sync with the git branch you work on (`apply` with `branch: feat/x`).

@@ -99,6 +99,7 @@ impl Project {
             agent_changes: AgentChanges::Auto,
             require_evidence: false,
             git: None,
+            require_approval: false,
         };
         let text = toml::to_string(&config).map_err(|e| parse_err(&cfg_path, e))?;
         write_atomic(&cfg_path, text.as_bytes())?;
@@ -120,6 +121,11 @@ impl Project {
     /// Whether agents must attach passing evidence to mark tasks done; saves `.pathloom/project.toml`.
     pub fn set_require_evidence(&mut self, on: bool) -> Result<()> {
         self.update_config(|c| c.require_evidence = on)
+    }
+
+    /// Whether agents cannot close tasks themselves (they go to review); saves `.pathloom/project.toml`.
+    pub fn set_require_approval(&mut self, on: bool) -> Result<()> {
+        self.update_config(|c| c.require_approval = on)
     }
 
     fn update_config(&mut self, f: impl FnOnce(&mut ProjectConfig)) -> Result<()> {
@@ -452,7 +458,7 @@ impl Project {
         })
     }
 
-    fn edit_task_info(&self, task_id: &str, f: impl FnOnce(&mut TaskInfo) -> Result<()>) -> Result<Stage> {
+    pub(crate) fn edit_task_info(&self, task_id: &str, f: impl FnOnce(&mut TaskInfo) -> Result<()>) -> Result<Stage> {
         let key = task_id.split('-').next().unwrap_or("");
         self.edit_stage(key, |s| {
             if !s.task_ids().contains(task_id) {

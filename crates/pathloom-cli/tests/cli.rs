@@ -469,3 +469,47 @@ fn proposal_subcommand_propose_flag_approve_reject_conflict() {
     assert_eq!(v["state"], "conflict");
     assert_eq!(p.json(&["proposal", "list", "--state", "conflict"])["proposals"].as_array().unwrap().len(), 1);
 }
+
+#[test]
+fn approvals_decisions_and_inbox_via_cli() {
+    let p = Proj::new();
+    let file = p.dir.path().join("s.yaml");
+    std::fs::write(
+        &file,
+        "stages:\n  - {id: APPR, title: Approvals, tasks: [Icon]}\n  - {id: DECIDE, title: Decisions, tasks: [Database]}\n  - {id: DEV, title: Dev, tasks: [Build]}\n",
+    )
+    .unwrap();
+    p.json(&["apply", file.to_str().unwrap()]);
+
+    // the human CLI is not limited by require_approval
+    assert_eq!(p.json(&["approval", "require", "on"])["require_approval"], true);
+    assert_eq!(p.json(&["info"])["require_approval"], true);
+    let v = p.json(&["task", "done", "DEV-01"]);
+    assert_eq!(v["done"], true);
+    assert!(p.json(&["info"])["capabilities"].as_array().unwrap().iter().any(|c| c == "inbox"));
+
+    p.json(&["approval", "request", "APPR-01", "--file", "shots/a.png", "--note", "New icon"]);
+    assert_eq!(p.json(&["inbox"])["items"][0]["kind"], "approval");
+    p.json(&["approval", "reject", "APPR-01", "--reason", "off-theme", "--reason", "quality", "--comment", "Darker"]);
+    let a = &p.json(&["approval", "list", "--state", "rejected"])["approvals"][0];
+    assert_eq!((a["reasons"][1].as_str(), a["comment"].as_str(), a["by"].as_str()), (Some("quality"), Some("Darker"), Some("me")));
+    let st = p.json(&["stage", "show", "APPR"]);
+    assert_eq!(st["tasks"][0]["done"], false);
+    assert_eq!(st["comments"][0]["text"], "rejected APPR-01 [off-theme, quality]: Darker");
+    p.json(&["approval", "request", "APPR-01"]);
+    p.json(&["approval", "approve", "APPR-01"]);
+    assert_eq!(p.json(&["stage", "show", "APPR"])["tasks"][0]["done"], true);
+
+    p.json(&["decision", "ask", "DECIDE-01", "--question", "Which DB?", "--option", "SQLite|local", "--option", "Postgres", "--recommended", "0"]);
+    let inbox = p.json(&["inbox"]);
+    assert_eq!((inbox["count"].as_u64(), inbox["items"][0]["task_id"].as_str()), (Some(1), Some("DECIDE-01")));
+    assert!(String::from_utf8_lossy(&p.run(&["decisions", "--md"]).stdout).trim().is_empty());
+    p.json(&["decision", "answer", "DECIDE-01", "SQLite"]);
+    assert_eq!(p.json(&["inbox"])["count"], 0);
+    let md = String::from_utf8_lossy(&p.run(&["decisions", "--md"]).stdout).replace("\r\n", "\n");
+    let day = &p.json(&["decisions"])["decisions"][0]["at"].as_str().unwrap()[..10].to_string();
+    assert_eq!(
+        md.trim_end(),
+        format!("## DECIDE-01 — Which DB?\n- Рішення: SQLite\n- Хто/коли: me, {day}\n- Варіанти: SQLite (рекомендовано), Postgres")
+    );
+}

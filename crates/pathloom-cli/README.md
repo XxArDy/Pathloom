@@ -34,6 +34,11 @@ pathloom validate [--fix]                 # exit 1 while problems remain
 pathloom schema stage|board|spec          # JSON Schema
 pathloom proposal list [--state pending|approved|rejected|conflict|all] | approve <id> [--comment T] | reject <id> [--comment T]   # `proposals`, `accept` are aliases
 pathloom apply FILE --propose   # store a proposal even when agent_changes = auto
+pathloom approval request <ID> [--file F]... [--note T] | approve <ID> [--comment T] | reject <ID> [--reason R]... [--comment T] | list [--state S] | require on|off
+pathloom decision ask <ID> --question Q --option "label|description"... [--recommended N] | answer <ID> "text"
+pathloom decisions [--md]   # all decisions; --md = answered ones as Markdown
+pathloom inbox [--json]     # what waits for the owner: pending approvals, open decisions, owner tasks
+# `require on`: agents (MCP) cannot close tasks, `set_task done` puts them in review; the human CLI is not limited
 pathloom agent set <id> [--name N] [--color #rrggbb] [--avatar 🤖|assets/f.png] [--kind K] | list | remove <id>
 pathloom watch [--since RFC3339]         # event stream (NDJSON with --json)
 pathloom skill install [--dir .agents/skills] [--force]

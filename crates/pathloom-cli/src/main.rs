@@ -6,7 +6,7 @@ mod ops;
 mod schema;
 
 use clap::Parser;
-use cli::{AgentCmd, BoardCmd, Cli, Cmd, GateCmd, ProposalCmd, SkillCmd, StageCmd, TaskCmd};
+use cli::{AgentCmd, ApprovalCmd, BoardCmd, DecisionCmd, Cli, Cmd, GateCmd, ProposalCmd, SkillCmd, StageCmd, TaskCmd};
 use ops::{ApiError, ApiResult};
 use pathloom_core::events::{Event, EventWatcher};
 use pathloom_core::{ApplySpec, DepSpec, Place, Project, SessionRef, StageSpec};
@@ -514,6 +514,96 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
                     emit(cli, &v, || format!("Rejected proposal {id}"));
                 }
             }
+        }
+        Cmd::Approval(c) => {
+            let mut p = open(cli)?;
+            // The owner acts through the CLI too: `me` unless --author says otherwise.
+            let owner = if cli.author == "agent" { ops::Actor::new("me", "cli") } else { actor.clone() };
+            match c {
+                ApprovalCmd::Request { task_id, files, note } => {
+                    let v = ops::request_approval(&p, &actor, task_id, files, note.as_deref())?;
+                    emit(cli, &v, || format!("{task_id} sent for approval (review)"));
+                }
+                ApprovalCmd::Approve { task_id, comment } => {
+                    let v = ops::decide_approval(&p, &owner, task_id, true, &[], comment.as_deref())?;
+                    emit(cli, &v, || format!("Approved {task_id}"));
+                }
+                ApprovalCmd::Reject { task_id, reasons, comment } => {
+                    let v = ops::decide_approval(&p, &owner, task_id, false, reasons, comment.as_deref())?;
+                    emit(cli, &v, || format!("Rejected {task_id}"));
+                }
+                ApprovalCmd::List { state } => {
+                    let v = ops::approvals(&p, state.as_deref())?;
+                    emit(cli, &v, || {
+                        let rows: Vec<String> = v["approvals"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .map(|a| {
+                                let why = list(a, "reasons");
+                                let why = if why.is_empty() { String::new() } else { format!(" [{}]", why.join(", ")) };
+                                format!("{:<10} {:<9}{why} {} {}", s(a, "task_id"), s(a, "state"), s(a, "title"), s(a, "comment"))
+                            })
+                            .collect();
+                        if rows.is_empty() { "No approvals.".into() } else { rows.join("\n") }
+                    });
+                }
+                ApprovalCmd::Require { value } => {
+                    let on = matches!(value, cli::OnOff::On);
+                    let v = ops::set_require_approval(&mut p, &actor, on)?;
+                    emit(cli, &v, || format!("require_approval {}", if on { "on" } else { "off" }));
+                }
+            }
+        }
+        Cmd::Decision(c) => {
+            let p = open(cli)?;
+            match c {
+                DecisionCmd::Ask { task_id, question, options, recommended } => {
+                    let opts = options
+                        .iter()
+                        .map(|o| {
+                            let (label, description) = o.split_once('|').unwrap_or((o, ""));
+                            pathloom_core::DecisionOption { label: label.into(), description: description.into() }
+                        })
+                        .collect();
+                    let v = ops::ask_decision(&p, &actor, task_id, question, opts, *recommended)?;
+                    emit(cli, &v, || format!("Asked a decision on {task_id}"));
+                }
+                DecisionCmd::Answer { task_id, text } => {
+                    let owner = if cli.author == "agent" { ops::Actor::new("me", "cli") } else { actor.clone() };
+                    let v = ops::answer_decision(&p, &owner, task_id, text)?;
+                    emit(cli, &v, || format!("{task_id} decided: {text}"));
+                }
+            }
+        }
+        Cmd::Decisions { md } => {
+            let p = open(cli)?;
+            if *md && !cli.json {
+                println!("{}", ops::decisions_md(&p)?);
+            } else {
+                let v = ops::decisions(&p, false)?;
+                emit(cli, &v, || {
+                    let rows: Vec<String> = v["decisions"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .map(|d| format!("{:<10} {}  -> {}", s(d, "task_id"), s(d, "question"), d["choice"].as_str().unwrap_or("(open)")))
+                        .collect();
+                    if rows.is_empty() { "No decisions.".into() } else { rows.join("\n") }
+                });
+            }
+        }
+        Cmd::Inbox => {
+            let v = ops::inbox(&open(cli)?)?;
+            emit(cli, &v, || {
+                let rows: Vec<String> = v["items"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|i| format!("{:<9} {:<10} {}", s(i, "kind"), s(i, "task_id"), s(i, "title")))
+                    .collect();
+                if rows.is_empty() { "Nothing waits for you.".into() } else { rows.join("\n") }
+            });
         }
         Cmd::Info => {
             let v = ops::project_info(&open(cli)?, false)?;

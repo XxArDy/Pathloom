@@ -141,6 +141,44 @@ struct SetTaskParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct RequestApprovalParams {
+    /// Task id, e.g. DESIGN-03
+    task_id: String,
+    /// Files to show the owner (screenshots, mockups): project-relative paths or http(s) links
+    files: Option<Vec<String>>,
+    /// What to look at (replaces the task note)
+    note: Option<String>,
+    /// External client session you act from (client, id, url?, title?). Logged with the action.
+    session: Option<SessionRef>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct GetApprovalsParams {
+    /// pending | approved | rejected | all (default all)
+    state: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct AskDecisionParams {
+    /// Task id, e.g. DECIDE-01
+    task_id: String,
+    /// The question for the owner (up to 500 characters)
+    question: String,
+    /// 1-8 options: {label (up to 80), description? (up to 500)}
+    options: Vec<pathloom_core::DecisionOption>,
+    /// Index of the option you recommend
+    recommended: Option<usize>,
+    /// External client session you act from (client, id, url?, title?). Logged with the action.
+    session: Option<SessionRef>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ListDecisionsParams {
+    /// true = only unanswered decisions
+    open: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct InitParams {
     /// Project name (default: folder name)
     name: Option<String>,
@@ -386,12 +424,17 @@ impl PathloomServer {
             if !dry {
                 self.guard()?;
             }
-            let spec = ops::parse_spec_value(&a.spec)?;
+            let mut spec = ops::parse_spec_value(&a.spec)?;
             let p = self.project()?;
             let done: Vec<String> = spec.stages.iter().flat_map(|s| s.tasks_done.iter().cloned()).collect();
             ops::require_no_evidence_policy(&p, &done)?;
-            let v = ops::submit_with(&p, &spec, &self.author(&ctx), dry, false, a.propose.unwrap_or(false))?;
-            Ok(ops::log_submit(&p, &self.actor(&ctx, a.session)?, "apply", &spec, v))
+            let (propose, actor) = (a.propose.unwrap_or(false), self.actor(&ctx, a.session)?);
+            // require_approval: an agent's direct changes do not close tasks, they send them to review.
+            let direct = !dry && !propose && p.config.agent_changes == pathloom_core::AgentChanges::Auto;
+            let diverted = if direct { ops::divert_done_to_review(&p, &mut spec)? } else { vec![] };
+            let v = ops::submit_with(&p, &spec, &self.author(&ctx), dry, false, propose)?;
+            let v = ops::review_diverted(&p, &actor, &diverted, v)?;
+            Ok(ops::log_submit(&p, &actor, "apply", &spec, v))
         })())
     }
 
@@ -415,13 +458,51 @@ impl PathloomServer {
     }
 
     #[tool(
-        description = "Mark a task or subtask done (true) or not done (false); claim_task it first when you start the work. Attach `evidence` (the check you ran, exit_code 0) so the task shows as verified. Returns the stage's new status."
+        description = "Mark a task or subtask done (true) or not done (false); claim_task it first when you start the work. Attach `evidence` (the check you ran, exit_code 0) so the task shows as verified. Returns the stage's new status; with require_approval on, the result is {\"state\": \"review\"}: the task waits for the owner."
     )]
     async fn set_task(&self, Parameters(a): Parameters<SetTaskParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
         finish((|| {
             self.guard()?;
             ops::set_task(&self.project()?, &self.actor(&ctx, a.session)?, "set_task", &a.task_id, a.done, a.evidence, true)
         })())
+    }
+
+    #[tool(
+        description = "Ask the owner to approve your work on a task (a screenshot, a design, a result): attach `files` and a `note`; the task goes to review (not done) until the owner approves in the app. Read the outcome with get_approvals: when rejected you get `reasons` and `comment` (also added to the stage comments); fix it and request again."
+    )]
+    async fn request_approval(&self, Parameters(a): Parameters<RequestApprovalParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
+        finish((|| {
+            self.guard()?;
+            let actor = self.actor(&ctx, a.session)?;
+            ops::request_approval(&self.project()?, &actor, &a.task_id, &a.files.unwrap_or_default(), a.note.as_deref())
+        })())
+    }
+
+    #[tool(
+        description = "Approvals of all stages: task_id, stage, title, state (pending | approved | rejected), files, note, reasons, comment, at, by, requested_by, requested_at. Filter by state. Only the owner approves or rejects (in the app or CLI); you cannot.",
+        annotations(read_only_hint = true)
+    )]
+    async fn get_approvals(&self, Parameters(a): Parameters<GetApprovalsParams>) -> CallToolResult {
+        finish(self.project().and_then(|p| ops::approvals(&p, a.state.as_deref())))
+    }
+
+    #[tool(
+        description = "Ask the owner a question with options on a task (e.g. DECIDE-01): question, 1-8 options {label, description?}, recommended (index). The task stays open until the owner answers; read the answer with list_decisions or get_stage (task_info.<ID>.decision.choice)."
+    )]
+    async fn ask_decision(&self, Parameters(a): Parameters<AskDecisionParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
+        finish((|| {
+            self.guard()?;
+            let actor = self.actor(&ctx, a.session)?;
+            ops::ask_decision(&self.project()?, &actor, &a.task_id, &a.question, a.options, a.recommended)
+        })())
+    }
+
+    #[tool(
+        description = "Decisions of all stages: task_id, stage, title, question, options, recommended, choice (the owner's answer, absent while open), at, by, asked_by. open=true lists only unanswered ones.",
+        annotations(read_only_hint = true)
+    )]
+    async fn list_decisions(&self, Parameters(a): Parameters<ListDecisionsParams>) -> CallToolResult {
+        finish(self.project().and_then(|p| ops::decisions(&p, a.open.unwrap_or(false))))
     }
 
     #[tool(

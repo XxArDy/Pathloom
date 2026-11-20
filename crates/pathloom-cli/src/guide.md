@@ -57,6 +57,13 @@ The user reads the plan as a picture, left to right. Follow these rules whenever
 - `kind: gate` stages have `check` (a command). Run it yourself and report with `set_gate {key, evidence}`:
   exit code 0 makes the gate done, anything else reopens it.
 - Optional `report_usage {tokens_in, tokens_out, cost_usd?, stage?, note?}`: the app sums it per agent and stage.
+- Approvals: when the user must look at your work (a screenshot, a design), call `request_approval {task_id, files?, note?}`;
+  the task waits in review (not done). Read the outcome with `get_approvals {state?}`: `state` is `pending`, `approved` or
+  `rejected` with `reasons` and `comment` (also a comment on the stage): fix it and request again. Only the user approves or
+  rejects; there is no tool for that. With `require_approval` on, `set_task done` (and `tasks_done` in `apply`) does not close
+  a task either: the result is `{"state": "review"}` and your evidence is kept.
+- Decisions: `ask_decision {task_id, question, options: [{label, description?}], recommended?}` asks the user; the task stays
+  open until they answer. Read the answer with `list_decisions {open?}` (`choice`) or `get_stage` (`taskInfo.<ID>.decision.choice`).
 - `import_tasks {format: "spec-kit", text}` turns a Spec Kit `tasks.md` into stages (phases), tasks and dependencies.
 
 ## Identity and sessions

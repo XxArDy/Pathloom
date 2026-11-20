@@ -63,7 +63,7 @@ impl Project {
             let open = s.tasks.iter().flat_map(|p| {
                 if p.sub.is_empty() { vec![(p, None)] } else { p.sub.iter().map(|x| (x, Some(p.id.as_str()))).collect() }
             });
-            for (t, parent) in open.filter(|(t, _)| !t.done) {
+            for (t, parent) in open.filter(|(t, _)| !t.done && !s.in_review(&t.id)) {
                 // A claim on the parent task covers its subtasks.
                 let owner = claims
                     .iter()

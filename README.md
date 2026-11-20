@@ -172,6 +172,7 @@ Several agents can work on one plan at once: each one claims a task before start
 | `activity` | What other agents and you did recently. |
 | `heartbeat` | "Still working" during long steps; after 10 silent minutes the card shows the agent as possibly stuck. |
 | `set_gate`, `report_usage` | Report a gate's check result; optionally report tokens and cost. |
+| `request_approval`, `get_approvals`, `ask_decision`, `list_decisions` | Ask the user to approve work or choose between options, and read the answer (reasons and comment on a rejection). |
 | `import_tasks` | Turn a GitHub Spec Kit `tasks.md` into stages, tasks and dependencies. |
 | `layout_board`, `validate` | Tidy the board, check the plan for problems. |
 

@@ -195,7 +195,7 @@ impl Stage {
         let ev: Map<String, Value> = self
             .evidence
             .iter()
-            .filter(|(k, _)| done.contains(k.as_str()) || **k == self.key)
+            .filter(|(k, _)| done.contains(k.as_str()) || **k == self.key || self.in_review(k))
             .map(|(k, e)| (k.clone(), serde_json::to_value(e).unwrap_or(Value::Null)))
             .collect();
         if !ev.is_empty() {

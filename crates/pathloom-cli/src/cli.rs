@@ -107,6 +107,19 @@ pub enum Cmd {
     /// Agent proposals: list, approve, reject
     #[command(subcommand, alias = "proposal")]
     Proposals(ProposalCmd),
+    /// Approvals: request, approve, reject, list; `require` toggles review for agents
+    #[command(subcommand)]
+    Approval(ApprovalCmd),
+    /// Decisions: ask the owner a question with options, or answer it
+    #[command(subcommand)]
+    Decision(DecisionCmd),
+    /// All decisions; --md prints the answered ones as Markdown
+    Decisions {
+        #[arg(long)]
+        md: bool,
+    },
+    /// What waits for the owner: pending approvals, open decisions, open owner tasks
+    Inbox,
     /// Protocol version, capabilities, counts and agent profiles
     Info,
     /// Agent profiles: display name, color, avatar
@@ -324,6 +337,65 @@ pub enum SchemaKind {
     Stage,
     Board,
     Spec,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ApprovalCmd {
+    /// Ask the owner to approve a task (it goes to review)
+    Request {
+        task_id: String,
+        /// File to show (project path or http(s) link); repeatable
+        #[arg(long = "file", value_name = "FILE")]
+        files: Vec<String>,
+        #[arg(long)]
+        note: Option<String>,
+    },
+    /// Approve: ticks the task
+    Approve {
+        task_id: String,
+        #[arg(long)]
+        comment: Option<String>,
+    },
+    /// Reject: the task stays open, reasons and comment are stored and added to the stage comments
+    Reject {
+        task_id: String,
+        /// Reason (off-theme, duplicate, quality, scale, wrong-place, or your own); repeatable
+        #[arg(long = "reason", value_name = "REASON")]
+        reasons: Vec<String>,
+        #[arg(long)]
+        comment: Option<String>,
+    },
+    /// List approvals (pending|approved|rejected|all)
+    List {
+        #[arg(long)]
+        state: Option<String>,
+    },
+    /// Turn `require_approval` on or off: agents then cannot close tasks, they go to review
+    Require { value: OnOff },
+}
+
+#[derive(clap::ValueEnum, Clone, Copy, Debug)]
+pub enum OnOff {
+    On,
+    Off,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum DecisionCmd {
+    /// Ask a question with options
+    Ask {
+        task_id: String,
+        #[arg(long)]
+        question: String,
+        /// Option as `label` or `label|description`; repeat for 1-8 options
+        #[arg(long = "option", value_name = "LABEL|DESCRIPTION", required = true)]
+        options: Vec<String>,
+        /// Index (from 0) of the recommended option
+        #[arg(long)]
+        recommended: Option<usize>,
+    },
+    /// Answer: an option label or your own text
+    Answer { task_id: String, text: String },
 }
 
 #[derive(Subcommand, Debug)]

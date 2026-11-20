@@ -3,6 +3,7 @@
 
 mod agents;
 mod apply;
+mod approvals;
 mod board;
 mod claims;
 mod error;
@@ -50,8 +51,9 @@ pub use import::ImportReport;
 pub use keygen::generate_key;
 pub use model::{
     AgentChanges, Board, Comment, Dep, GitConfig, Priority, ProjectConfig, Stage, StageKind, StageMeta, StageView, Status,
-    Task, TaskInfo, Who,
+    Approval, ApprovalState, DecisionOption, InboxKind, Task, TaskDecision, TaskInfo, TaskKind, Who,
 };
+pub use approvals::{ApprovalView, DecisionView, InboxItem};
 pub use project::Project;
 pub use stagefile::is_valid_key;
 pub use status::{compute_statuses, stage_views};

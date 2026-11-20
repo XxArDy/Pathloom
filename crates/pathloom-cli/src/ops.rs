@@ -171,6 +171,7 @@ pub fn project_info(p: &Project, read_only: bool) -> ApiResult<Value> {
         "protocol": pathloom_core::PROTOCOL, "version": env!("CARGO_PKG_VERSION"),
         "capabilities": capabilities(read_only),
         "agent_changes": to_v(&p.config.agent_changes), "require_evidence": p.config.require_evidence,
+        "require_approval": p.config.require_approval,
         "read_only": read_only,
         "agents": p.agents()?,
         "boards": p.list_boards()?,
@@ -290,6 +291,14 @@ pub fn set_task(
         e
     });
     let verified = evidence.as_ref().map(|e| e.command.clone());
+    if enforce && done && needs_review(p, task_id)? {
+        let s = p.submit_for_review(task_id, evidence, &a.name)?;
+        let v = json!({"state": "review", "task_id": task_id, "done": false, "verified": verified.is_some(),
+                       "note": "this project requires the owner's approval: the task waits in review until they approve it",
+                       "stage": brief(&s, p)?});
+        let e = entry("task review", format!("{task_id} sent to review"), vec![s.key.clone()], vec![task_id.into()], vec![stage_file(p, &s.key)]);
+        return Ok(log(p, a, e, v));
+    }
     let hint = if done { unclaimed_hint(p, &a.name, &[task_id.to_string()]) } else { None };
     let s = p.set_task_done_with(task_id, done, evidence)?;
     let mut v = json!({"task_id": task_id, "done": done, "verified": verified.is_some(), "stage": brief(&s, p)?});
@@ -323,6 +332,140 @@ pub fn require_no_evidence_policy(p: &Project, task_ids: &[String]) -> ApiResult
         }
     }
     Ok(())
+}
+
+/// `require_approval` is on and the task is not done yet (a done task stays as the owner left it).
+fn needs_review(p: &Project, task_id: &str) -> ApiResult<bool> {
+    if !p.config.require_approval {
+        return Ok(false);
+    }
+    let s = p.load_stage(&stage_key(task_id))?;
+    Ok(s.task_ids().contains(task_id) && !s.done_task_ids().contains(task_id))
+}
+
+/// With `require_approval` on, move `tasks_done` of an agent's apply spec out of it and return them: the caller
+/// sends them to review after the spec is applied. Tasks that do not exist yet (new in the same spec) stay.
+pub fn divert_done_to_review(p: &Project, spec: &mut ApplySpec) -> ApiResult<Vec<String>> {
+    let mut out = Vec::new();
+    if !p.config.require_approval {
+        return Ok(out);
+    }
+    for st in &mut spec.stages {
+        let mut keep = Vec::new();
+        for id in std::mem::take(&mut st.tasks_done) {
+            let exists = p.load_stage(&stage_key(&id)).is_ok_and(|s| s.task_ids().contains(id.as_str()));
+            if exists && needs_review(p, &id)? { out.push(id) } else { keep.push(id) }
+        }
+        st.tasks_done = keep;
+    }
+    Ok(out)
+}
+
+/// Send `tasks` to review (after an agent's apply); adds `review` to the apply result.
+pub fn review_diverted(p: &Project, a: &Actor, tasks: &[String], mut v: Value) -> ApiResult<Value> {
+    if tasks.is_empty() || v["mode"] != "applied" {
+        return Ok(v);
+    }
+    for t in tasks {
+        let s = p.submit_for_review(t, None, &a.name)?;
+        let e = entry("task review", format!("{t} sent to review"), vec![s.key.clone()], vec![t.clone()], vec![stage_file(p, &s.key)]);
+        log(p, a, e, Value::Null);
+    }
+    v["state"] = json!("review");
+    v["review"] = json!(tasks);
+    Ok(v)
+}
+
+fn task_log(p: &Project, a: &Actor, action: &str, summary: String, s: &Stage, task_id: &str, v: Value) -> Value {
+    log(p, a, entry(action, summary, vec![s.key.clone()], vec![task_id.into()], vec![stage_file(p, &s.key)]), v)
+}
+
+/// Ask the owner to approve a task (it goes to `review`).
+pub fn request_approval(p: &Project, a: &Actor, task_id: &str, files: &[String], note: Option<&str>) -> ApiResult<Value> {
+    let s = p.request_approval(task_id, files, note, &a.name)?;
+    let v = json!({"state": "review", "task_id": task_id, "stage": brief(&s, p)?});
+    Ok(task_log(p, a, "approval request", format!("{task_id} sent for approval"), &s, task_id, v))
+}
+
+/// The owner approves or rejects a task (CLI / app; not exposed over MCP).
+pub fn decide_approval(p: &Project, a: &Actor, task_id: &str, approve: bool, reasons: &[String], comment: Option<&str>) -> ApiResult<Value> {
+    let s = p.decide_approval(task_id, approve, reasons, comment, &a.name)?;
+    let state = if approve { "approved" } else { "rejected" };
+    let v = json!({"state": state, "task_id": task_id, "stage": brief(&s, p)?});
+    let action = if approve { "approval approve" } else { "approval reject" };
+    Ok(task_log(p, a, action, format!("{state} {task_id}"), &s, task_id, v))
+}
+
+pub fn approvals(p: &Project, state: Option<&str>) -> ApiResult<Value> {
+    let state = match state {
+        None | Some("all") => None,
+        Some(x) => Some(
+            serde_json::from_value::<pathloom_core::ApprovalState>(json!(x))
+                .map_err(|_| ApiError::new("INVALID_SPEC", format!("unknown state `{x}` (pending|approved|rejected|all)")))?,
+        ),
+    };
+    Ok(json!({"approvals": p.approvals(state)?}))
+}
+
+pub fn ask_decision(
+    p: &Project,
+    a: &Actor,
+    task_id: &str,
+    question: &str,
+    options: Vec<pathloom_core::DecisionOption>,
+    recommended: Option<usize>,
+) -> ApiResult<Value> {
+    let s = p.ask_decision(task_id, question, options, recommended, &a.name)?;
+    let v = json!({"task_id": task_id, "asked": true, "stage": brief(&s, p)?});
+    Ok(task_log(p, a, "decision ask", format!("asked a decision on {task_id}"), &s, task_id, v))
+}
+
+pub fn answer_decision(p: &Project, a: &Actor, task_id: &str, choice: &str) -> ApiResult<Value> {
+    let s = p.answer_decision(task_id, choice, &a.name)?;
+    let v = json!({"task_id": task_id, "choice": choice.trim(), "stage": brief(&s, p)?});
+    Ok(task_log(p, a, "decision answer", format!("{task_id} decided: {}", choice.trim().chars().take(60).collect::<String>()), &s, task_id, v))
+}
+
+pub fn decisions(p: &Project, open_only: bool) -> ApiResult<Value> {
+    Ok(json!({"decisions": p.decisions(open_only)?}))
+}
+
+/// Answered decisions as Markdown (`pathloom decisions --md`).
+pub fn decisions_md(p: &Project) -> ApiResult<String> {
+    let blocks: Vec<String> = p
+        .decisions(false)?
+        .into_iter()
+        .filter_map(|v| {
+            let d = v.decision;
+            let choice = d.choice.as_ref()?;
+            let opts: Vec<String> = d
+                .options
+                .iter()
+                .enumerate()
+                .map(|(i, o)| if d.recommended == Some(i) { format!("{} (рекомендовано)", o.label) } else { o.label.clone() })
+                .collect();
+            Some(format!(
+                "## {} — {}\n- Рішення: {choice}\n- Хто/коли: {}, {}\n- Варіанти: {}\n",
+                v.task_id,
+                d.question,
+                d.by,
+                d.at.chars().take(10).collect::<String>(),
+                opts.join(", ")
+            ))
+        })
+        .collect();
+    Ok(blocks.join("\n"))
+}
+
+pub fn inbox(p: &Project) -> ApiResult<Value> {
+    let items = p.inbox()?;
+    Ok(json!({"count": items.len(), "items": items}))
+}
+
+pub fn set_require_approval(p: &mut Project, a: &Actor, on: bool) -> ApiResult<Value> {
+    p.set_require_approval(on)?;
+    let e = entry("require_approval", format!("require_approval {}", if on { "on" } else { "off" }), vec![], vec![], vec![".pathloom/project.toml".into()]);
+    Ok(log(p, a, e, json!({"require_approval": on})))
 }
 
 pub fn add_comment(p: &Project, a: &Actor, key: &str, author: &str, text: &str) -> ApiResult<Value> {
