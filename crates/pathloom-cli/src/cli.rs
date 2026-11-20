@@ -31,7 +31,16 @@ pub enum Cmd {
         /// Also write .agents/skills/pathloom/SKILL.md (Agent Skills format)
         #[arg(long)]
         agents_skill: bool,
+        /// Start from a plan template (see `template list`)
+        #[arg(long)]
+        template: Option<String>,
+        /// Template language: en | uk
+        #[arg(long)]
+        lang: Option<String>,
     },
+    /// Plan templates: list, save the current plan, apply
+    #[command(subcommand)]
+    Template(TemplateCmd),
     /// Manage boards
     #[command(subcommand)]
     Board(BoardCmd),
@@ -350,6 +359,26 @@ pub enum AgentCmd {
     List,
     Remove {
         id: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum TemplateCmd {
+    /// Built-in and your own templates (~/.pathloom/templates)
+    List,
+    /// Save the current plan (stages, tasks, dependencies, frames; no progress, dates or log) as a template
+    Save {
+        /// [a-z0-9-], up to 40
+        name: String,
+        #[arg(long)]
+        title: Option<String>,
+    },
+    /// Add a template's stages to this project
+    Apply {
+        id: String,
+        /// en | uk
+        #[arg(long)]
+        lang: Option<String>,
     },
 }
 

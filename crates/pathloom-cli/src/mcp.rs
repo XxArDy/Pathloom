@@ -214,6 +214,18 @@ struct InitParams {
     name: Option<String>,
     /// Also write .agents/skills/pathloom/SKILL.md for other agents (Codex, Gemini CLI, Cursor)
     agents_skill: Option<bool>,
+    /// Start from a plan template (ids from list_templates)
+    template: Option<String>,
+    /// Template language: en | uk
+    lang: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ApplyTemplateParams {
+    /// Template id (from list_templates)
+    id: String,
+    /// en | uk (default en)
+    lang: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -361,13 +373,37 @@ impl PathloomServer {
             let name = a.name.filter(|n| !n.trim().is_empty()).unwrap_or_else(|| {
                 self.root.file_name().map_or_else(|| "project".into(), |n| n.to_string_lossy().into_owned())
             });
+            if let Some(t) = &a.template {
+                crate::tpl::check(t, a.lang.as_deref())?;
+            }
             let p = Project::init(&self.root, name.trim())?;
             let mut v = json!({"name": name.trim(), "root": p.root.to_string_lossy(), "plan_dir": p.config.plan_dir});
+            if let Some(t) = &a.template {
+                v["template"] = crate::tpl::apply(&p, t, a.lang.as_deref(), true)?["report"].clone();
+            }
             if a.agents_skill.unwrap_or(false) {
                 let path = ops::install_skill(&p.root, std::path::Path::new(".agents/skills"), false)?;
                 v["skill"] = json!(path.to_string_lossy());
             }
             Ok(v)
+        })())
+    }
+
+    #[tool(
+        description = "Plan templates: built-in (product-launch, book, renovation, course) and the user's own. Each has id, title, description, builtin, langs.",
+        annotations(read_only_hint = true)
+    )]
+    async fn list_templates(&self) -> CallToolResult {
+        finish(Ok(crate::tpl::list(None)))
+    }
+
+    #[tool(
+        description = "Add a template's stages, tasks, dependencies and frames to the plan (new keys; existing stages are untouched). In review mode it stores a proposal the user approves instead of writing."
+    )]
+    async fn apply_template(&self, Parameters(a): Parameters<ApplyTemplateParams>) -> CallToolResult {
+        finish((|| {
+            self.guard()?;
+            crate::tpl::apply(&self.project()?, &a.id, a.lang.as_deref(), false)
         })())
     }
 
