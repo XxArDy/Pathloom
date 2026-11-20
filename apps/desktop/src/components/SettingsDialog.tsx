@@ -5,6 +5,7 @@ import { api, errorText } from '../api';
 import { useApp } from '../store';
 import { allThemes } from '../theme';
 import { setLanguage } from '../i18n';
+import { loadReminders, saveReminders, type ReminderSettings } from '../reminders';
 import { reopenLastEnabled, setReopenLast } from '../projectActions';
 import {
   COMMAND_GROUPS, DEFAULT_KEYMAP, chordFromEvent, conflictsOf, effectiveKeymap, formatChord, useKeys, type Command,
@@ -104,6 +105,31 @@ function Shortcuts() {
   );
 }
 
+function Reminders() {
+  const { t } = useTranslation();
+  const [r, setR] = useState<ReminderSettings>(loadReminders());
+  const upd = (p: Partial<ReminderSettings>) => { const n = { ...r, ...p }; setR(n); saveReminders(n); };
+  return (
+    <>
+      <dt title={t('reminders.hint')}>{t('reminders.title')}</dt>
+      <dd><input type="checkbox" checked={r.enabled} onChange={(e) => upd({ enabled: e.target.checked })} /></dd>
+      {r.enabled && (
+        <>
+          <dt>{t('reminders.due')}</dt>
+          <dd><input type="checkbox" checked={r.due} onChange={(e) => upd({ due: e.target.checked })} /></dd>
+          <dt>{t('reminders.waiting')}</dt>
+          <dd><input type="checkbox" checked={r.waiting} onChange={(e) => upd({ waiting: e.target.checked })} /></dd>
+          <dt>{t('reminders.summary')}</dt>
+          <dd>
+            <input type="checkbox" checked={r.summary} onChange={(e) => upd({ summary: e.target.checked })} />{' '}
+            <input type="time" value={r.time} disabled={!r.summary} onChange={(e) => e.target.value && upd({ time: e.target.value })} />
+          </dd>
+        </>
+      )}
+    </>
+  );
+}
+
 function General() {
   const { t, i18n } = useTranslation();
   const { theme, renderStyle, customThemes, set, edgeHideRedundant, edgeBundle } = useApp();
@@ -137,6 +163,7 @@ function General() {
       <dd><input type="checkbox" checked={edgeHideRedundant} onChange={(e) => set({ edgeHideRedundant: e.target.checked })} /></dd>
       <dt title={t('settings.edgeBundleHint')}>{t('settings.edgeBundle')}</dt>
       <dd><input type="checkbox" checked={edgeBundle} onChange={(e) => set({ edgeBundle: e.target.checked })} /></dd>
+      <Reminders />
       <dt>{t('settings.licenses')}</dt>
       <dd><button className="btn" onClick={() => void api.openLicenses().catch((e) => set({ error: errorText(e) }))}>{t('settings.licensesOpen')}</button></dd>
     </dl>

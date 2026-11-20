@@ -145,7 +145,8 @@
   "views": {
     "board": "Board",
     "list": "List",
-    "overview": "Overview"
+    "overview": "Overview",
+    "agenda": "Today / Week"
   },
   "exec": {
     "on": "Focus",
@@ -429,5 +430,47 @@
     "error": "Git: {{error}}",
     "queued": "{{count}} queued owner actions",
     "queuedHint": "Waiting for a clean working tree; they are committed automatically."
+  },
+  "agenda": {
+    "today": "Today",
+    "week": "Week",
+    "overdue": "Overdue",
+    "due": "Due",
+    "blocked": "Blocked",
+    "waiting": "Waiting for me",
+    "empty": "Nothing here.",
+    "due_on": "due {{date}}"
+  },
+  "reminders": {
+    "title": "Reminders",
+    "hint": "System notifications while the app is open. Off by default.",
+    "due": "Due dates (day before and day of)",
+    "waiting": "New items waiting for me",
+    "summary": "Daily summary at",
+    "dueTitle": "Due soon",
+    "dueToday": "today",
+    "dueTomorrow": "tomorrow",
+    "waitingTitle": "Waiting for me",
+    "summaryTitle": "Daily summary",
+    "sumDone": "done {{count}}",
+    "sumOverdue": "overdue {{count}}",
+    "sumBlocked": "blocked {{count}}",
+    "sumWaiting": "waiting {{count}}"
+  },
+  "tpl": {
+    "new": "New from template",
+    "add": "Add from template…",
+    "save": "Save plan as template…",
+    "title": "Templates",
+    "empty": "No templates.",
+    "builtin": "built-in",
+    "mine": "mine",
+    "saveTitle": "Save plan as template",
+    "name": "Name (a-z, 0-9, -)",
+    "titleField": "Title",
+    "saved": "Saved",
+    "pickFolder": "Choose a folder for the new project",
+    "cancel": "Cancel",
+    "ok": "Save"
   }
 }

@@ -31,7 +31,9 @@ interface AppStore {
   /** Drawing style: follow the theme's default, or force one. */
   renderStyle: 'theme' | 'clean' | 'sketch';
   error: string | null;
-  view: 'board' | 'list' | 'overview';
+  view: 'board' | 'list' | 'overview' | 'agenda';
+  /** Template dialog inside an open project. */
+  templateDialog: 'add' | 'save' | null;
   paletteOpen: boolean;
   /** VS Code style list picker for the theme or the UI language. */
   picker: 'theme' | 'language' | null;
@@ -120,6 +122,7 @@ export const useApp = create<AppStore>((set, get) => ({
   renderStyle: savedStyle(),
   error: null,
   view: 'board',
+  templateDialog: null,
   paletteOpen: false,
   picker: null,
   snap: false,
