@@ -439,10 +439,10 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
                 v["tasks"].as_array().into_iter().flatten().map(fmt_task).collect::<Vec<_>>().join("\n")
             });
         }
-        Cmd::Apply { file, dry_run, direct } => {
+        Cmd::Apply { file, dry_run, direct, propose } => {
             let p = open(cli)?;
             let spec = Project::parse_spec(&read_spec_text(file)?)?;
-            let v = ops::submit(&p, &spec, &cli.author, *dry_run, *direct)?;
+            let v = ops::submit_with(&p, &spec, &cli.author, *dry_run, *direct, *propose)?;
             let v = ops::log_submit(&p, &actor, "apply", &spec, v);
             emit(cli, &v, || fmt_submit(&v));
         }
@@ -473,39 +473,44 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
         Cmd::Proposals(c) => {
             let p = open(cli)?;
             match c {
-                ProposalCmd::List => {
-                    let list = p.list_proposals()?;
-                    let v = json!({"proposals": list});
+                ProposalCmd::List { state } => {
+                    let v = ops::list_proposals(&p, state.as_deref())?;
                     emit(cli, &v, || {
+                        let list = v["proposals"].as_array().map_or(&[][..], Vec::as_slice);
                         if list.is_empty() {
-                            return "No pending proposals.".into();
+                            return "No proposals.".into();
                         }
                         list.iter()
                             .map(|x| {
+                                let st = x["decision"]["state"].as_str().unwrap_or("pending");
                                 format!(
-                                    "{}  {}  {}  +{} ~{} stages",
-                                    x.id,
-                                    x.created_at,
-                                    x.author,
-                                    x.preview.created.len(),
-                                    x.preview.updated.len()
+                                    "{}  {}  {}  {st}  +{} ~{} stages",
+                                    s(x, "id"),
+                                    s(x, "created_at"),
+                                    s(x, "author"),
+                                    x["preview"]["created"].as_array().map_or(0, Vec::len),
+                                    x["preview"]["updated"].as_array().map_or(0, Vec::len)
                                 )
                             })
                             .collect::<Vec<_>>()
                             .join("\n")
                     });
                 }
-                ProposalCmd::Accept { id } => {
-                    let r = p.accept_proposal(id)?;
-                    let stages: Vec<String> = r.created.iter().chain(&r.updated).cloned().collect();
-                    let e = ops::entry("proposals accept", format!("accepted proposal {id}"), stages, vec![], r.files.clone());
-                    let v = ops::log(&p, &actor, e, json!({"mode": "applied", "report": r}));
-                    emit(cli, &v, || fmt_submit(&v));
+                ProposalCmd::Approve { id, comment } => {
+                    let v = ops::decide_proposal(&p, &actor, "proposal approve", id, true, comment.as_deref())?;
+                    emit(cli, &v, || {
+                        if v["state"] == "conflict" {
+                            format!("Conflict: a stage changed since proposal {id} was made; nothing applied")
+                        } else {
+                            fmt_submit(&json!({"mode": "applied", "report": v["report"]}))
+                        }
+                    });
+                    if v["state"] == "conflict" {
+                        return Ok(ExitCode::FAILURE);
+                    }
                 }
-                ProposalCmd::Reject { id } => {
-                    p.reject_proposal(id)?;
-                    let e = ops::entry("proposals reject", format!("rejected proposal {id}"), vec![], vec![], vec![]);
-                    let v = ops::log(&p, &actor, e, json!({"rejected": id}));
+                ProposalCmd::Reject { id, comment } => {
+                    let v = ops::decide_proposal(&p, &actor, "proposal reject", id, false, comment.as_deref())?;
                     emit(cli, &v, || format!("Rejected proposal {id}"));
                 }
             }

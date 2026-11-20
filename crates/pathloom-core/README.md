@@ -23,7 +23,7 @@ Spec: `docs/spec.md` §4-5; API contract: `docs/m1-contracts.md` §1. Tests: `ca
   down past non-card obstacles (frames and arrows/lines/freedraw are ignored); refits frames of moved cards.
 - `validate()` -> `Vec<Issue{code,message,path}>` (`PARSE_ERROR`, `DUPLICATE_KEY`, `BROKEN_DEPEND`, `BROKEN_CARD`, `CYCLE`, `INVALID_TASK_ID`);
   `validate_fix()` only drops broken depends and cards of missing stages.
-- Proposals (`.pathloom/proposals/<ulid>.json`): `propose`, `list_proposals`, `accept_proposal`, `reject_proposal`.
+- Proposals (`.pathloom/proposals/<ulid>.json`, decided ones in `proposals/decided/`, newest 200): `propose` (stores `stage_hashes` + `changes`), `list_proposals`, `list_proposals_by(ProposalFilter)`, `decide_proposal(id, approve, comment, by)` (stale stage -> `decision.state = conflict`, nothing applied), `accept_proposal` (CONFLICT error), `reject_proposal`.
 - `writes::{record, is_own}`: every atomic write registers `(path, sha256)`; the desktop watcher uses `is_own` to skip its own writes
   (paths are compared as written, not canonicalized). `write_file_atomic(path, bytes)` is the public atomic write.
 - New errors: `Error::Conflict{key}`, `Error::InvalidSpec(msg)`. `Project::init_with(root, name, plan_dir)`.

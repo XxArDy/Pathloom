@@ -231,8 +231,8 @@ fn watcher_reports_stage_claim_log_proposal_agents_and_board() {
     let e = wait_for(&w, 5, |e| matches!(e, Event::Proposal { .. })).expect("proposal created");
     assert!(matches!(&e, Event::Proposal { id, change: Change::Created, .. } if *id == prop.id));
     p.reject_proposal(&prop.id).unwrap();
-    let e = wait_for(&w, 5, |e| matches!(e, Event::Proposal { .. })).expect("proposal deleted");
-    assert!(matches!(e, Event::Proposal { change: Change::Deleted, .. }));
+    let e = wait_for(&w, 5, |e| matches!(e, Event::Proposal { .. })).expect("proposal decided");
+    assert!(matches!(e, Event::Proposal { change: Change::Decided, state: Some(pathloom_core::DecisionState::Rejected), .. }));
 
     p.upsert_agent(AgentProfile { id: "claude".into(), name: "Claude".into(), ..Default::default() }).unwrap();
     assert!(wait_for(&w, 5, |e| matches!(e, Event::Agents { .. })).is_some(), "agents event");
@@ -267,4 +267,14 @@ fn invalid_sessions_do_not_break_loading_and_are_preserved() {
     p.add_task("BAD", "Still editable").unwrap();
     let after = std::fs::read_to_string(&path).unwrap();
     assert!(after.contains("javascript:alert(1)"), "raw sessions kept: {after}");
+}
+
+#[test]
+fn proposal_event_json_state_is_optional() {
+    let created = Event::Proposal { id: "X".into(), change: Change::Created, state: None, at: "t".into() };
+    assert_eq!(created.to_json_line(), r#"{"type":"proposal","id":"X","change":"created","at":"t"}"#);
+    let decided = Event::Proposal { id: "X".into(), change: Change::Decided, state: Some(DecisionState::Conflict), at: "t".into() };
+    assert_eq!(decided.to_json_line(), r#"{"type":"proposal","id":"X","change":"decided","state":"conflict","at":"t"}"#);
+    let back: Event = serde_json::from_str(&created.to_json_line()).unwrap();
+    assert_eq!(back, created);
 }

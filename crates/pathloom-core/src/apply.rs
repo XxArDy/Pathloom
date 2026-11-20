@@ -274,7 +274,7 @@ impl Project {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn plan_apply(&self, spec: &ApplySpec, opts: &ApplyOptions) -> Result<(ApplyReport, Vec<(PathBuf, String)>)> {
+    pub(crate) fn plan_apply(&self, spec: &ApplySpec, opts: &ApplyOptions) -> Result<(ApplyReport, Vec<(PathBuf, String)>)> {
         let mut stages = self.load_stages()?;
         let mut orig: HashMap<String, String> = HashMap::new();
         for s in &stages {

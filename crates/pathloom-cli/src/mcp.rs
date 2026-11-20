@@ -104,6 +104,25 @@ struct ApplyParams {
     spec: Value,
     /// Validate and report only; write nothing
     dry_run: Option<bool>,
+    /// true = store a proposal for the user to approve instead of writing (the plan stays unchanged until then)
+    propose: Option<bool>,
+    /// External client session you act from (client, id, url?, title?). Logged with the action.
+    session: Option<SessionRef>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ListProposalsParams {
+    /// pending (default) | approved | rejected | conflict | all
+    state: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct DecideProposalParams {
+    /// Proposal id (from list_proposals or the apply result)
+    id: String,
+    /// true = apply it, false = reject it
+    approve: bool,
+    comment: Option<String>,
     /// External client session you act from (client, id, url?, title?). Logged with the action.
     session: Option<SessionRef>,
 }
@@ -359,7 +378,7 @@ impl PathloomServer {
     }
 
     #[tool(
-        description = "Batch create/update stages, tasks, links, frames, comments from a spec. All or nothing. Use dry_run first. In review mode it creates a proposal instead of writing."
+        description = "Batch create/update stages, tasks, links, frames, comments from a spec. All or nothing. Use dry_run first. In review mode, or with propose=true, it stores a proposal the user approves in the app instead of writing; read the outcome with list_proposals."
     )]
     async fn apply(&self, Parameters(a): Parameters<ApplyParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
         finish((|| {
@@ -371,8 +390,27 @@ impl PathloomServer {
             let p = self.project()?;
             let done: Vec<String> = spec.stages.iter().flat_map(|s| s.tasks_done.iter().cloned()).collect();
             ops::require_no_evidence_policy(&p, &done)?;
-            let v = ops::submit(&p, &spec, &self.author(&ctx), dry, false)?;
+            let v = ops::submit_with(&p, &spec, &self.author(&ctx), dry, false, a.propose.unwrap_or(false))?;
             Ok(ops::log_submit(&p, &self.actor(&ctx, a.session)?, "apply", &spec, v))
+        })())
+    }
+
+    #[tool(
+        description = "Proposals made with apply (propose=true or review mode): state pending (default) | approved | rejected | conflict | all. Each has `changes` (stage files before/after) and, once the user decided, `decision` {state, comment, at, by}. conflict = a stage changed meanwhile, nothing was applied: re-read and propose again.",
+        annotations(read_only_hint = true)
+    )]
+    async fn list_proposals(&self, Parameters(a): Parameters<ListProposalsParams>) -> CallToolResult {
+        finish(self.project().and_then(|p| ops::list_proposals(&p, a.state.as_deref())))
+    }
+
+    #[tool(
+        description = "Approve (applies the proposal as its author) or reject a pending proposal. Normally the user decides in the app; call this only when the user told you to. Returns the decision; state conflict = nothing applied."
+    )]
+    async fn decide_proposal(&self, Parameters(a): Parameters<DecideProposalParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
+        finish((|| {
+            self.guard()?;
+            let actor = self.actor(&ctx, a.session)?;
+            ops::decide_proposal(&self.project()?, &actor, "decide_proposal", &a.id, a.approve, a.comment.as_deref())
         })())
     }
 

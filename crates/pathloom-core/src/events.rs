@@ -10,6 +10,7 @@ use crate::fsutil::now_rfc3339;
 use crate::hash::hash_bytes;
 use crate::log::LogEntry;
 use crate::project::Project;
+use crate::proposals::DecisionState;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
 use serde::{Deserialize, Serialize};
@@ -28,6 +29,8 @@ pub enum Change {
     Created,
     Updated,
     Deleted,
+    /// Proposals only: moved to `proposals/decided/` (see `state`).
+    Decided,
 }
 
 impl Change {
@@ -36,6 +39,7 @@ impl Change {
             Change::Created => "created",
             Change::Updated => "updated",
             Change::Deleted => "deleted",
+            Change::Decided => "decided",
         }
     }
 }
@@ -52,7 +56,14 @@ pub enum Event {
     Claims { claims: Vec<Claim>, at: String },
     /// A new line of the activity log.
     Activity { entry: LogEntry },
-    Proposal { id: String, change: Change, at: String },
+    Proposal {
+        id: String,
+        change: Change,
+        /// Only with `change: decided`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        state: Option<DecisionState>,
+        at: String,
+    },
     Agents { at: String },
 }
 
@@ -82,7 +93,10 @@ impl std::fmt::Display for Event {
             Event::Activity { entry: e } => {
                 write!(f, "{}  activity {} {} {}: {}", e.at, e.author, e.source, e.action, e.summary)
             }
-            Event::Proposal { id, change, at } => write!(f, "{at}  proposal {id} {}", change.as_str()),
+            Event::Proposal { id, change, state, at } => match state {
+                Some(s) => write!(f, "{at}  proposal {id} {} ({})", change.as_str(), s.as_str()),
+                None => write!(f, "{at}  proposal {id} {}", change.as_str()),
+            },
             Event::Agents { at } => write!(f, "{at}  agents changed"),
         }
     }
@@ -142,6 +156,7 @@ struct Dirs {
     boards: PathBuf,
     meta: PathBuf,
     proposals: PathBuf,
+    decided: PathBuf,
     log_dir: PathBuf,
 }
 
@@ -157,19 +172,21 @@ impl Dirs {
             stages: mk(plan.join("stages"))?,
             boards: mk(plan.join("boards"))?,
             proposals: mk(meta.join("proposals"))?,
+            decided: mk(meta.join("proposals/decided"))?,
             log_dir: mk(meta.join("log"))?,
             plan: mk(plan)?,
             meta: mk(meta)?,
         })
     }
 
-    fn watched(&self) -> [(&Path, RecursiveMode); 6] {
+    fn watched(&self) -> [(&Path, RecursiveMode); 7] {
         use RecursiveMode::{NonRecursive, Recursive};
         [
             (&self.stages, NonRecursive),
             (&self.boards, Recursive),
             (&self.plan, NonRecursive),
             (&self.proposals, NonRecursive),
+            (&self.decided, NonRecursive),
             (&self.meta, NonRecursive),
             (&self.log_dir, NonRecursive),
         ]
@@ -181,6 +198,7 @@ enum Kind {
     Stage(String),
     Board(String),
     Proposal(String),
+    Decided(String),
     Claims,
     Agents,
     Log,
@@ -191,6 +209,7 @@ struct Tracker {
     stages_dir: PathBuf,
     boards_dir: PathBuf,
     proposals_dir: PathBuf,
+    decided_dir: PathBuf,
     claims_file: PathBuf,
     agents_file: PathBuf,
     log_file: PathBuf,
@@ -198,6 +217,7 @@ struct Tracker {
     stages: HashMap<String, String>,
     boards: HashMap<String, String>,
     proposals: HashSet<String>,
+    decided: HashSet<String>,
     agents_hash: Option<String>,
     claims_hash: Option<String>,
     log_offset: u64,
@@ -236,6 +256,7 @@ impl Tracker {
             stages_dir: d.stages.clone(),
             boards_dir: d.boards.clone(),
             proposals_dir: d.proposals.clone(),
+            decided_dir: d.decided.clone(),
             claims_file: d.meta.join("claims.json"),
             agents_file: d.plan.join("agents.json"),
             log_file: d.log_dir.join("agent.jsonl"),
@@ -244,6 +265,7 @@ impl Tracker {
             stages: HashMap::new(),
             boards: HashMap::new(),
             proposals: HashSet::new(),
+            decided: HashSet::new(),
             agents_hash: None,
             claims_hash: None,
             log_offset: 0,
@@ -265,6 +287,11 @@ impl Tracker {
                 t.proposals.insert(id.to_string());
             }
         }
+        for p in files_with_ext(&t.decided_dir, "json") {
+            if let Some(id) = p.file_stem().and_then(|s| s.to_str()) {
+                t.decided.insert(id.to_string());
+            }
+        }
         t.agents_hash = file_hash(&t.agents_file);
         t.claims_hash = file_hash(&t.claims_file);
         t.log_offset = std::fs::metadata(&t.log_file).map_or(0, |m| m.len());
@@ -276,6 +303,9 @@ impl Tracker {
         let ext = p.extension().and_then(|e| e.to_str());
         if p.parent() == Some(self.stages_dir.as_path()) && ext == Some("md") {
             return stem().map(Kind::Stage);
+        }
+        if p.parent() == Some(self.decided_dir.as_path()) && ext == Some("json") {
+            return stem().map(Kind::Decided);
         }
         if p.parent() == Some(self.proposals_dir.as_path()) && ext == Some("json") {
             return stem().map(Kind::Proposal);
@@ -311,9 +341,20 @@ impl Tracker {
                 Kind::Proposal(id) => {
                     let exists = p.is_file();
                     if exists && self.proposals.insert(id.clone()) {
-                        out.push(Event::Proposal { id, change: Change::Created, at: at.clone() });
+                        out.push(Event::Proposal { id, change: Change::Created, state: None, at: at.clone() });
                     } else if !exists && self.proposals.remove(&id) {
-                        out.push(Event::Proposal { id, change: Change::Deleted, at: at.clone() });
+                        // Moved to decided/: the `decided` event covers it, no `deleted`.
+                        if !self.decided_dir.join(format!("{id}.json")).is_file() {
+                            out.push(Event::Proposal { id, change: Change::Deleted, state: None, at: at.clone() });
+                        }
+                    }
+                }
+                Kind::Decided(id) => {
+                    if !p.is_file() {
+                        self.decided.remove(&id); // pruned
+                    } else if self.decided.insert(id.clone()) {
+                        let state = Project::decided_state(p);
+                        out.push(Event::Proposal { id, change: Change::Decided, state, at: at.clone() });
                     }
                 }
                 Kind::Claims => {

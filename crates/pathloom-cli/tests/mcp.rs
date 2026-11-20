@@ -341,3 +341,32 @@ fn claim_with_session_is_logged_and_linked() {
     assert!(err);
     assert_eq!(v["code"], "INVALID_SPEC");
 }
+
+#[test]
+fn apply_propose_then_list_and_decide() {
+    let d = project();
+    let mut c = Client::start(d.path(), &[]);
+    c.handshake();
+    let spec = json!({"stages": [{"id": "A", "title": "Alpha", "tasks": ["one"]}]});
+    let (err, v) = c.call("apply", json!({"spec": spec, "propose": true}));
+    assert!(!err, "{v}");
+    assert_eq!(v["mode"], "proposed");
+    let id = v["proposal_id"].as_str().unwrap().to_string();
+    assert!(!d.path().join("plan/stages/A.md").exists());
+
+    let (_, v) = c.call("list_proposals", json!({}));
+    assert_eq!(v["proposals"][0]["id"], id.as_str());
+    assert_eq!(v["proposals"][0]["changes"][0]["path"], "plan/stages/A.md");
+    assert!(v["proposals"][0]["decision"].is_null());
+
+    let (err, v) = c.call("decide_proposal", json!({"id": id, "approve": true, "comment": "go"}));
+    assert!(!err, "{v}");
+    assert_eq!(v["state"], "approved");
+    assert!(d.path().join("plan/stages/A.md").exists());
+    let (_, v) = c.call("list_proposals", json!({"state": "approved"}));
+    assert_eq!(v["proposals"][0]["decision"]["comment"], "go");
+    let (_, v) = c.call("list_proposals", json!({}));
+    assert!(v["proposals"].as_array().unwrap().is_empty());
+    let (err, _) = c.call("list_proposals", json!({"state": "bogus"}));
+    assert!(err);
+}

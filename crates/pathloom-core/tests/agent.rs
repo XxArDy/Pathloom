@@ -364,3 +364,85 @@ fn writes_registry_tracks_own_writes() {
     assert!(!writes::is_own(&path, &hash_bytes(b"external")));
     assert_eq!(hash_bytes(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
 }
+
+#[test]
+fn proposal_stores_hashes_and_changes_then_approve_applies() {
+    let (d, p) = project();
+    p.apply(&spec("stages: [{id: A, title: A, tasks: [one]}]"), &opts()).unwrap();
+    let before = p.stage_hash("A").unwrap();
+    let prop = p.propose(&spec("stages: [{id: A, tasks: [two]}, {id: B, title: B}]"), "agent:x").unwrap();
+    assert_eq!(prop.stage_hashes.get("A"), Some(&before));
+    assert!(!prop.stage_hashes.contains_key("B"), "new stages have no hash");
+    let paths: Vec<&str> = prop.changes.iter().map(|c| c.path.as_str()).collect();
+    assert!(paths.contains(&"plan/stages/A.md") && paths.contains(&"plan/stages/B.md"), "{paths:?}");
+    assert!(paths.iter().all(|p| !p.contains(".board.json") && !p.contains('\\')));
+    let a = prop.changes.iter().find(|c| c.path.ends_with("A.md")).unwrap();
+    assert!(a.before.as_deref().unwrap().contains("one") && a.after.as_deref().unwrap().contains("two"));
+    assert!(prop.changes.iter().find(|c| c.path.ends_with("B.md")).unwrap().before.is_none());
+
+    let done = p.decide_proposal(&prop.id, true, Some("ok"), "me").unwrap();
+    let dec = done.decision.unwrap();
+    assert_eq!((dec.state, dec.comment.as_deref(), dec.by.as_str()), (DecisionState::Approved, Some("ok"), "me"));
+    assert_eq!(p.load_stage("A").unwrap().tasks.len(), 2);
+    assert!(p.list_proposals().unwrap().is_empty());
+    assert!(d.path().join(format!(".pathloom/proposals/decided/{}.json", prop.id)).is_file());
+    assert_eq!(p.list_proposals_by(ProposalFilter::Decided(DecisionState::Approved)).unwrap().len(), 1);
+    assert!(p.list_proposals_by(ProposalFilter::Decided(DecisionState::Rejected)).unwrap().is_empty());
+    assert_eq!(p.list_proposals_by(ProposalFilter::All).unwrap().len(), 1);
+    assert!(matches!(p.decide_proposal(&prop.id, true, None, "me"), Err(Error::NotFound(_))));
+}
+
+#[test]
+fn proposal_conflict_applies_nothing() {
+    let (_d, p) = project();
+    p.apply(&spec("stages: [{id: A, title: A, tasks: [one]}]"), &opts()).unwrap();
+    let prop = p.propose(&spec("stages: [{id: A, tasks: [two]}]"), "x").unwrap();
+    p.add_task("A", "sneaky").unwrap();
+    let r = p.decide_proposal(&prop.id, true, None, "me").unwrap();
+    assert_eq!(r.decision.unwrap().state, DecisionState::Conflict);
+    let tasks: Vec<String> = p.load_stage("A").unwrap().tasks.iter().map(|t| t.title.clone()).collect();
+    assert_eq!(tasks, ["one", "sneaky"]);
+    assert_eq!(p.list_proposals_by(ProposalFilter::Decided(DecisionState::Conflict)).unwrap().len(), 1);
+
+    // the legacy wrapper reports CONFLICT as an error
+    let prop = p.propose(&spec("stages: [{id: A, tasks: [three]}]"), "x").unwrap();
+    p.add_task("A", "again").unwrap();
+    assert!(matches!(p.accept_proposal(&prop.id), Err(Error::Conflict { ref key }) if key == "A"));
+}
+
+#[test]
+fn proposal_reject_keeps_comment_and_old_json_loads() {
+    let (d, p) = project();
+    let prop = p.propose(&spec("stages: [{id: B, title: B}]"), "x").unwrap();
+    let r = p.decide_proposal(&prop.id, false, Some("  not now "), "me").unwrap();
+    let dec = r.decision.unwrap();
+    assert_eq!((dec.state, dec.comment.as_deref()), (DecisionState::Rejected, Some("not now")));
+    assert!(p.load_stage("B").is_err());
+
+    // a pre-v2 file has none of the new fields
+    let mut v = serde_json::to_value(p.propose(&spec("stages: [{id: C, title: C}]"), "x").unwrap()).unwrap();
+    let id = v["id"].as_str().unwrap().to_string();
+    for k in ["stage_hashes", "changes", "decision"] {
+        v.as_object_mut().unwrap().remove(k);
+    }
+    std::fs::write(d.path().join(format!(".pathloom/proposals/{id}.json")), v.to_string()).unwrap();
+    let old = &p.list_proposals().unwrap()[0];
+    assert!(old.changes.is_empty() && old.stage_hashes.is_empty() && old.decision.is_none());
+    p.accept_proposal(&id).unwrap();
+    assert!(p.load_stage("C").is_ok());
+}
+
+#[test]
+fn decided_proposals_are_pruned_to_200() {
+    let (d, p) = project();
+    let dir = d.path().join(".pathloom/proposals/decided");
+    std::fs::create_dir_all(&dir).unwrap();
+    for i in 0..205 {
+        std::fs::write(dir.join(format!("{i:04}.json")), "{}").unwrap();
+    }
+    let prop = p.propose(&spec("stages: [{id: B, title: B}]"), "x").unwrap();
+    p.decide_proposal(&prop.id, false, None, "me").unwrap();
+    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 200);
+    assert!(dir.join(format!("{}.json", prop.id)).is_file());
+}
+

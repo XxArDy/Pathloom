@@ -210,15 +210,20 @@ pub fn search(p: &Project, query: &str, limit: usize) -> ApiResult<Value> {
 
 /// Run an apply spec honoring `agent_changes`: review mode stores a proposal unless `direct`.
 pub fn submit(p: &Project, spec: &ApplySpec, author: &str, dry_run: bool, direct: bool) -> ApiResult<Value> {
+    submit_with(p, spec, author, dry_run, direct, false)
+}
+
+/// [`submit`] with `propose`: store a proposal whatever `agent_changes` says (`direct` is ignored then).
+pub fn submit_with(p: &Project, spec: &ApplySpec, author: &str, dry_run: bool, direct: bool, propose: bool) -> ApiResult<Value> {
     use pathloom_core::AgentChanges;
     if dry_run {
         let r = p.apply(spec, &ApplyOptions { dry_run: true, author: author.into() })?;
         return Ok(json!({"mode": "dry_run", "report": r}));
     }
-    if p.config.agent_changes == AgentChanges::Review && !direct {
+    if propose || (p.config.agent_changes == AgentChanges::Review && !direct) {
         let prop = p.propose(spec, author)?;
         return Ok(json!({"mode": "proposed", "proposal_id": prop.id, "report": prop.preview,
-                         "note": "agent_changes=review: the plan is unchanged until a human accepts this proposal"}));
+                         "note": "the plan is unchanged until a human approves this proposal (list_proposals shows the decision)"}));
     }
     let done: Vec<String> = spec.stages.iter().flat_map(|s| s.tasks_done.iter().cloned()).collect();
     let hint = unclaimed_hint(p, &normalize_agent(author), &done);
@@ -228,6 +233,32 @@ pub fn submit(p: &Project, spec: &ApplySpec, author: &str, dry_run: bool, direct
         v["hint"] = json!(h);
     }
     Ok(v)
+}
+
+/// Proposals by state (`pending` default): `{"proposals": [{id, author, created_at, preview, changes, decision}]}`.
+pub fn list_proposals(p: &Project, state: Option<&str>) -> ApiResult<Value> {
+    let filter = pathloom_core::ProposalFilter::parse(state.unwrap_or("pending"))?;
+    let list: Vec<Value> = p
+        .list_proposals_by(filter)?
+        .into_iter()
+        .map(|x| json!({"id": x.id, "author": x.author, "created_at": x.created_at, "preview": x.preview,
+                        "changes": x.changes, "decision": x.decision}))
+        .collect();
+    Ok(json!({"proposals": list}))
+}
+
+/// Approve or reject a proposal and log it. A conflict is a result (`state: conflict`), not an error.
+pub fn decide_proposal(p: &Project, a: &Actor, action: &str, id: &str, approve: bool, comment: Option<&str>) -> ApiResult<Value> {
+    let prop = p.decide_proposal(id, approve, comment, &a.name)?;
+    let state = prop.decision.as_ref().map_or("", |d| d.state.as_str());
+    let stages: Vec<String> = prop.preview.created.iter().chain(&prop.preview.updated).cloned().collect();
+    let (summary, stages, files) = match state {
+        "approved" => (format!("approved proposal {id}"), stages, prop.preview.files.clone()),
+        "conflict" => (format!("proposal {id}: conflict, nothing applied"), vec![], vec![]),
+        _ => (format!("rejected proposal {id}"), vec![], vec![]),
+    };
+    let v = json!({"id": id, "state": state, "decision": prop.decision, "report": prop.preview});
+    Ok(log(p, a, entry(action, summary, stages, vec![], files), v))
 }
 
 pub fn parse_spec_value(v: &Value) -> ApiResult<ApplySpec> {

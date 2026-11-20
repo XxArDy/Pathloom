@@ -432,3 +432,40 @@ fn watch_since_replays_log_then_goes_live() {
     let _ = child.kill();
     assert!(!p.run(&["watch", "--since", "yesterday"]).status.success());
 }
+
+#[test]
+fn proposal_subcommand_propose_flag_approve_reject_conflict() {
+    let p = Proj::new();
+    let file = p.dir.path().join("spec.yaml");
+    std::fs::write(&file, "stages: [{id: A, title: Alpha, tasks: [one]}]").unwrap();
+    // --propose works in auto mode too
+    let v = p.json(&["apply", file.to_str().unwrap(), "--propose"]);
+    assert_eq!(v["mode"], "proposed");
+    let id = v["proposal_id"].as_str().unwrap().to_string();
+    assert!(!p.dir.path().join("plan/stages/A.md").exists());
+    let l = p.json(&["proposal", "list"]);
+    assert_eq!(l["proposals"][0]["changes"][0]["path"], "plan/stages/A.md");
+
+    let v = p.json(&["proposal", "approve", &id, "--comment", "ok"]);
+    assert_eq!(v["state"], "approved");
+    assert!(p.dir.path().join("plan/stages/A.md").exists());
+    assert_eq!(p.json(&["proposal", "list", "--state", "approved"])["proposals"][0]["decision"]["comment"], "ok");
+    assert!(p.json(&["proposal", "list"])["proposals"].as_array().unwrap().is_empty());
+
+    // reject with a comment
+    std::fs::write(&file, "stages: [{id: B, title: Beta}]").unwrap();
+    let id = p.json(&["apply", file.to_str().unwrap(), "--propose"])["proposal_id"].as_str().unwrap().to_string();
+    let v = p.json(&["proposal", "reject", &id, "--comment", "no"]);
+    assert_eq!(v["state"], "rejected");
+    assert_eq!(p.json(&["proposal", "list", "--state", "rejected"])["proposals"][0]["decision"]["comment"], "no");
+
+    // a stage edited after the proposal: conflict, exit code 1, nothing applied
+    std::fs::write(&file, "stages: [{id: A, tasks: [two]}]").unwrap();
+    let id = p.json(&["apply", file.to_str().unwrap(), "--propose"])["proposal_id"].as_str().unwrap().to_string();
+    p.json(&["task", "add", "A", "sneaky"]);
+    let o = p.run(&["--json", "proposals", "accept", &id]);
+    assert!(!o.status.success());
+    let v: Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["state"], "conflict");
+    assert_eq!(p.json(&["proposal", "list", "--state", "conflict"])["proposals"].as_array().unwrap().len(), 1);
+}

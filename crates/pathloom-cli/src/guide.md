@@ -102,6 +102,6 @@ expected: {M0: "<hash from get_stage>"}
 - Do not invent task IDs: add tasks by title and read the IDs back with `get_stage`.
 - Keep titles short; put detail in the stage description (edit the file) or in comments.
 - Comments are authored as you (`agent:<client>`); keep them factual.
-- `agent_changes = review`: `apply` returns `mode: proposed` and changes nothing until a human accepts. That is normal; do not retry.
+- `agent_changes = review`, or `apply` with `propose: true`: returns `mode: proposed` and changes nothing until a human approves. That is normal; do not retry. Read the outcome with `list_proposals {state: "all"}`: `decision.state` is `approved`, `rejected` (see `decision.comment`) or `conflict` (a stage changed meanwhile, nothing applied: re-read with `get_stage` and propose again). `watch --json` emits `proposal ... decided`.
 - Errors are `{code, message, details}`: `NOT_FOUND`, `CYCLE`, `DUPLICATE_KEY`, `CONFLICT`, `CLAIMED`, `INVALID_SPEC`, `READ_ONLY`, `OUT_OF_PROJECT`.
   A failed `apply` writes nothing.

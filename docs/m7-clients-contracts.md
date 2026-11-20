@@ -45,6 +45,7 @@
 {"type":"claims","claims":[{"task_id":"AUTH-02","agent":"claude-code","expires_at":"...","session":null}],"at":"..."}
 {"type":"activity","entry":{ "...": "LogEntry" }}
 {"type":"proposal","id":"01J...","change":"created|deleted","at":"..."}
+{"type":"proposal","id":"01J...","change":"decided","state":"approved|rejected|conflict","at":"..."}   // file moved to proposals/decided/; no `deleted` for it
 {"type":"agents","at":"..."}
 ```
 - Debounce 200 мс; події дедуплікуються в межах вікна.

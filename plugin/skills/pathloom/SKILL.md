@@ -91,7 +91,7 @@ If you run inside an app with its own session id (an orchestrator, an IDE chat),
 
 ## Review mode
 
-If the project uses `agent_changes = "review"`, `apply` creates a **proposal** instead of writing files. The user sees it as dashed "Proposed" cards and accepts or rejects it. Tell the user a proposal is waiting; do not try to bypass it.
+If the project uses `agent_changes = "review"`, or you call `apply` with `propose: true` (CLI `pathloom apply FILE --propose`), a **proposal** is stored instead of writing files. The user approves or rejects it in the app. Tell the user a proposal is waiting; do not try to bypass it. Read the decision with `list_proposals {state: "all"}` (CLI `pathloom proposal list --state all`): `decision.state` is `approved`, `rejected` (`decision.comment` says why) or `conflict` (a stage changed since; re-read it and propose again). `watch --json` emits `proposal` events with `change: decided`.
 
 ## Concurrency
 

@@ -32,7 +32,8 @@ pathloom apply <spec.yaml|-> [--dry-run] [--direct]
 pathloom layout <board> [--only-new KEY...]
 pathloom validate [--fix]                 # exit 1 while problems remain
 pathloom schema stage|board|spec          # JSON Schema
-pathloom proposals list | accept <id> | reject <id>
+pathloom proposal list [--state pending|approved|rejected|conflict|all] | approve <id> [--comment T] | reject <id> [--comment T]   # `proposals`, `accept` are aliases
+pathloom apply FILE --propose   # store a proposal even when agent_changes = auto
 pathloom agent set <id> [--name N] [--color #rrggbb] [--avatar 🤖|assets/f.png] [--kind K] | list | remove <id>
 pathloom watch [--since RFC3339]         # event stream (NDJSON with --json)
 pathloom skill install [--dir .agents/skills] [--force]
@@ -77,7 +78,7 @@ newer than that time as `activity` events, then live events (200 ms debounce). W
 {"type":"agents","at":"..."}
 ```
 
-`stage`/`board` `change` is `created|updated|deleted` (compared with a snapshot taken at start); `claims` carries all live claims; `proposal` is `created|deleted`.
+`stage`/`board` `change` is `created|updated|deleted` (compared with a snapshot taken at start); `claims` carries all live claims; `proposal` is `created|deleted|decided` (`decided` carries `state: approved|rejected|conflict`).
 
 **Agent Skills**: `pathloom skill install` writes `.agents/skills/pathloom/SKILL.md` (the text of `plugin/skills/pathloom/SKILL.md`, embedded at compile time) into the
 project root, `init --agents-skill` does it right after init. An existing file is kept unless `--force` (`ALREADY_EXISTS`).

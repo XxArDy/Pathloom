@@ -11,6 +11,7 @@ pub fn capabilities(read_only: bool) -> Vec<&'static str> {
         vec![
             "read", "apply", "proposals", "claims", "activity", "agents", "events", "sessions", "layout", "validate",
             "evidence", "heartbeat", "import", "artifacts", "usage", "gates",
+            "propose",
         ]
     }
 }
@@ -24,7 +25,7 @@ mod tests {
         let rw = capabilities(false);
         let ro = capabilities(true);
         assert!(ro.iter().all(|c| rw.contains(c)));
-        for mutating in ["apply", "proposals", "claims", "agents", "sessions", "layout", "evidence", "heartbeat", "import", "usage", "gates"] {
+        for mutating in ["apply", "proposals", "claims", "agents", "sessions", "layout", "evidence", "heartbeat", "import", "usage", "gates", "propose"] {
             assert!(rw.contains(&mutating) && !ro.contains(&mutating), "{mutating}");
         }
         assert_eq!(PROTOCOL, "pathloom/1");

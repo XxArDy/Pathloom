@@ -38,7 +38,7 @@ pub use log::{LogEntry, Usage, UsageSummary};
 pub use fsutil::{now_rfc3339, write_file_atomic};
 pub use hash::hash_bytes;
 pub use next::NextTask;
-pub use proposals::Proposal;
+pub use proposals::{Decision, DecisionState, FileChange, Proposal, ProposalFilter};
 pub use protocol::{PROTOCOL, capabilities};
 pub use session::{MAX_STAGE_SESSIONS, SessionRef};
 pub use validate::Issue;

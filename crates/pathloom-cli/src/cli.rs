@@ -85,6 +85,9 @@ pub enum Cmd {
         /// Write directly even when the project is in review mode
         #[arg(long)]
         direct: bool,
+        /// Store a proposal for human approval (whatever the project mode is)
+        #[arg(long, conflicts_with = "direct")]
+        propose: bool,
     },
     /// Auto-layout the cards of a board (layered, left to right)
     Layout {
@@ -101,8 +104,8 @@ pub enum Cmd {
     },
     /// Print a JSON Schema
     Schema { what: SchemaKind },
-    /// Review mode: pending agent proposals
-    #[command(subcommand)]
+    /// Agent proposals: list, approve, reject
+    #[command(subcommand, alias = "proposal")]
     Proposals(ProposalCmd),
     /// Protocol version, capabilities, counts and agent profiles
     Info,
@@ -325,7 +328,22 @@ pub enum SchemaKind {
 
 #[derive(Subcommand, Debug)]
 pub enum ProposalCmd {
-    List,
-    Accept { id: String },
-    Reject { id: String },
+    /// List proposals (default: pending)
+    List {
+        /// pending|approved|rejected|conflict|all
+        #[arg(long)]
+        state: Option<String>,
+    },
+    /// Apply a proposal (conflict when a stage changed since)
+    #[command(alias = "accept")]
+    Approve {
+        id: String,
+        #[arg(long)]
+        comment: Option<String>,
+    },
+    Reject {
+        id: String,
+        #[arg(long)]
+        comment: Option<String>,
+    },
 }
