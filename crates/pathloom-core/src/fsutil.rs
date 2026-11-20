@@ -30,7 +30,7 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 /// Current UTC time as unix seconds (0 when the clock is before 1970).
-pub(crate) fn now_secs() -> i64 {
+pub fn now_secs() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(0))
@@ -87,10 +87,14 @@ impl FileLock {
     const STALE: Duration = Duration::from_secs(10);
 
     pub(crate) fn acquire(path: &Path) -> Result<FileLock> {
+        Self::acquire_for(path, Duration::from_secs(2))
+    }
+
+    pub(crate) fn acquire_for(path: &Path, wait: Duration) -> Result<FileLock> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        let deadline = std::time::Instant::now() + wait;
         loop {
             match std::fs::OpenOptions::new().write(true).create_new(true).open(path) {
                 Ok(_) => return Ok(FileLock(path.to_path_buf())),
@@ -117,6 +121,38 @@ impl FileLock {
 impl Drop for FileLock {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+thread_local! {
+    /// Lock files this thread holds (for re-entrant locking).
+    static HELD: std::cell::RefCell<Vec<std::path::PathBuf>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// [`FileLock`] that the same thread can take again (nested calls) without waiting for itself.
+/// Not for use across `.await`: the lock is bound to the thread.
+pub(crate) struct ReentrantLock {
+    path: std::path::PathBuf,
+    _file: Option<FileLock>,
+}
+
+impl ReentrantLock {
+    pub(crate) fn acquire(path: &Path, wait: Duration) -> Result<ReentrantLock> {
+        let held = HELD.with(|h| h.borrow().iter().any(|p| p == path));
+        let file = if held { None } else { Some(FileLock::acquire_for(path, wait)?) };
+        HELD.with(|h| h.borrow_mut().push(path.to_path_buf()));
+        Ok(ReentrantLock { path: path.to_path_buf(), _file: file })
+    }
+}
+
+impl Drop for ReentrantLock {
+    fn drop(&mut self) {
+        HELD.with(|h| {
+            let mut h = h.borrow_mut();
+            if let Some(i) = h.iter().rposition(|p| *p == self.path) {
+                h.remove(i);
+            }
+        });
     }
 }
 

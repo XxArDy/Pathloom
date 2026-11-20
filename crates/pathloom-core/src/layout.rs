@@ -522,6 +522,7 @@ impl Project {
     /// Turn auto-layout of `board` on or off and save; turning it on arranges the board right away.
     pub fn set_board_auto_layout(&self, board: &str, on: bool) -> Result<Board> {
         check_board_name(board)?;
+        let _lock = self.lock_plan()?;
         let mut b = self.load_board(board)?;
         b.auto_layout = on;
         if on {
@@ -537,6 +538,7 @@ impl Project {
     /// Cycle among the cards -> `Error::Cycle`.
     pub fn layout_board(&self, board: &str, only_new: &[String]) -> Result<Board> {
         check_board_name(board)?;
+        let _lock = self.lock_plan()?;
         let mut b = self.load_board(board)?;
         let stages = self.load_stages()?;
         let set: HashSet<String> = only_new.iter().cloned().collect();

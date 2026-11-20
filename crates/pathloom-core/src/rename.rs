@@ -34,6 +34,7 @@ impl Project {
         if old == new {
             return self.load_stage(old);
         }
+        let _lock = self.lock_plan()?;
         if self.stage_path(new).exists() {
             return Err(Error::DuplicateKey(new.into()));
         }

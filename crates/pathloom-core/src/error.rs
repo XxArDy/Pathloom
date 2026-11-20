@@ -29,6 +29,9 @@ pub enum Error {
     /// The task is claimed by another agent.
     #[error("task {task_id} is claimed by {by} until {expires_at}")]
     Claimed { task_id: String, by: String, expires_at: String },
+    /// `plan_dir` (or another path from the project file) points outside the project folder.
+    #[error("plan_dir `{0}` is outside the project")]
+    OutsideProject(String),
     #[error("project already initialized at {}", .0.display())]
     AlreadyInitialized(PathBuf),
     /// A `git` invocation failed (message = trimmed stderr, or why it could not start).

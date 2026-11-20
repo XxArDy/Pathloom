@@ -257,7 +257,11 @@ fn subtask_add(state: State<'_, AppState>, task_id: String, title: String) -> Cm
 /// Reverts one group of external (agent) changes reported by `plan-changed`.
 #[tauri::command]
 fn agent_undo(state: State<'_, AppState>, group: u64) -> CmdResult<Vec<StageView>> {
-    let touched = SNAPSHOT.lock().map_err(|_| "internal state poisoned".to_string())?.revert(group).map_err(|e| e.to_string())?;
+    let (touched, conflicts) =
+        SNAPSHOT.lock().map_err(|_| "internal state poisoned".to_string())?.revert(group).map_err(|e| e.to_string())?;
+    if touched.is_empty() && !conflicts.is_empty() {
+        return Err("not undone: the files changed again after the agent's change".into());
+    }
     with_project(&state, |p| {
         let files = touched.iter().filter_map(|f| f.strip_prefix(&p.root).ok()).map(|f| f.to_string_lossy().replace('\\', "/")).collect();
         log_app(p, "undo", "undid external changes", vec![], files);
@@ -295,13 +299,7 @@ fn agents_list(state: State<'_, AppState>) -> CmdResult<Vec<AgentProfile>> {
 /// Never opens javascript:, data:, file: or anything without a scheme.
 #[tauri::command]
 fn open_url(app: AppHandle, url: String) -> CmdResult<()> {
-    let scheme = url.split_once("://").map(|(s, _)| s.to_ascii_lowercase()).ok_or("not a URL")?;
-    let valid_scheme = !scheme.is_empty()
-        && scheme.chars().next().is_some_and(|c| c.is_ascii_lowercase())
-        && scheme.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '+' | '.' | '-'));
-    if !valid_scheme || matches!(scheme.as_str(), "javascript" | "data" | "file" | "vbscript") || url.len() > 2048 {
-        return Err("this link type can't be opened".into());
-    }
+    pathloom_core::url::check_session(&url).map_err(|e| e.to_string())?;
     app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
 }
 
@@ -309,6 +307,9 @@ fn open_url(app: AppHandle, url: String) -> CmdResult<()> {
 #[tauri::command]
 fn artifact_open(app: AppHandle, state: State<'_, AppState>, path: String) -> CmdResult<()> {
     let full = with_project(&state, |p| p.artifact_path(&path))?;
+    if pathloom_core::url::is_executable(&full) {
+        return Err(format!("{path}: programs and scripts are not opened from a plan; open it from the file manager"));
+    }
     app.opener().open_path(full.display().to_string(), None::<&str>).map_err(|e| e.to_string())
 }
 
@@ -372,29 +373,11 @@ fn usage_summary(state: State<'_, AppState>) -> CmdResult<pathloom_core::UsageSu
     with_project(&state, |p| p.usage_summary())
 }
 
-/// Run a shell command in `root` off the UI thread; returns (exit code or error, duration in ms).
-async fn run_shell(root: std::path::PathBuf, cmd: String) -> CmdResult<(std::io::Result<i32>, u64)> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let mut c = if cfg!(windows) {
-            let mut c = std::process::Command::new("cmd");
-            c.args(["/C", &cmd]);
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
-                c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-            }
-            c
-        } else {
-            let mut c = std::process::Command::new("sh");
-            c.args(["-c", &cmd]);
-            c
-        };
-        let start = std::time::Instant::now();
-        let out = c.current_dir(root).output();
-        (out.map(|o| o.status.code().unwrap_or(-1)), u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX))
-    })
-    .await
-    .map_err(|e| e.to_string())
+/// Run a shell command in `root` off the UI thread; returns the evidence (exit code, duration) or the error.
+async fn run_shell(root: std::path::PathBuf, cmd: String) -> CmdResult<Result<pathloom_core::Evidence, String>> {
+    tauri::async_runtime::spawn_blocking(move || pathloom_core::run_check(&cmd, Some(&root), true).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Run a gate's `check` in the project folder (after the user confirmed it in the UI) and record the result.
@@ -403,18 +386,9 @@ async fn gate_run(state: State<'_, AppState>, key: String) -> CmdResult<Vec<Stag
     let p = with_project(&state, |p| Ok(p.clone()))?;
     let check = p.load_stage(&key).map_err(|e| e.to_string())?.check.ok_or("this gate has no check command")?;
     let (root, cmd) = (p.root.clone(), check.clone());
-    let (code, ms) = run_shell(root, cmd).await?;
-    let code = code.map_err(|e| format!("cannot run `{check}`: {e}"))?;
-    let ev = pathloom_core::Evidence {
-        command: check.clone(),
-        exit_code: code,
-        duration_ms: Some(ms),
-        summary: None,
-        log: None,
-        commit: None,
-        at: String::new(),
-        by: "me".into(),
-    };
+    let mut ev = run_shell(root, cmd).await??;
+    let code = ev.exit_code;
+    ev.by = "me".into();
     let (_, passed) = p.set_gate_result(&key, ev).map_err(|e| e.to_string())?;
     let summary = if passed { format!("gate {key} passed: {check}") } else { format!("gate {key} failed ({code}): {check}") };
     log_app(&p, "set_gate", &summary, vec![key], vec![]);
@@ -434,7 +408,7 @@ fn claims_list(state: State<'_, AppState>) -> CmdResult<Vec<Claim>> {
 fn claim_release(state: State<'_, AppState>, task_id: String) -> CmdResult<Vec<StageView>> {
     with_project(&state, |p| {
         p.release_task(&task_id, "me", true)?;
-        let key = task_id.split('-').next().unwrap_or_default().to_string();
+        let key = pathloom_core::stage_key_of(&task_id).to_string();
         log_app(p, "release_task", &format!("released {task_id}"), vec![key], vec![]);
         views(p)
     })
@@ -629,7 +603,7 @@ fn proposal_decide(state: State<'_, AppState>, id: String, approve: bool, commen
 fn approvals_decide(state: State<'_, AppState>, task_id: String, approve: bool, reasons: Vec<String>, comment: Option<String>) -> CmdResult<Vec<StageView>> {
     with_project(&state, |p| {
         p.decide_approval(&task_id, approve, &reasons, comment.as_deref(), "me")?;
-        let key = task_id.split('-').next().unwrap_or_default().to_string();
+        let key = pathloom_core::stage_key_of(&task_id).to_string();
         let what = if approve { "approved" } else { "rejected" };
         log_app(p, "decide_approval", &format!("{what} {task_id}"), vec![key], vec![]);
         views(p)
@@ -641,7 +615,7 @@ fn approvals_decide(state: State<'_, AppState>, task_id: String, approve: bool, 
 fn decision_answer(state: State<'_, AppState>, task_id: String, choice: String) -> CmdResult<Vec<StageView>> {
     with_project(&state, |p| {
         p.answer_decision(&task_id, &choice, "me")?;
-        let key = task_id.split('-').next().unwrap_or_default().to_string();
+        let key = pathloom_core::stage_key_of(&task_id).to_string();
         log_app(p, "answer_decision", &format!("answered {task_id}"), vec![key], vec![]);
         views(p)
     })
@@ -656,10 +630,9 @@ fn inbox_list(state: State<'_, AppState>) -> CmdResult<Vec<pathloom_core::InboxI
 #[tauri::command]
 async fn evidence_recheck(state: State<'_, AppState>, task_id: String) -> CmdResult<i32> {
     let p = with_project(&state, |p| Ok(p.clone()))?;
-    let key = task_id.split('-').next().unwrap_or_default().to_string();
+    let key = pathloom_core::stage_key_of(&task_id).to_string();
     let cmd = p.load_stage(&key).map_err(|e| e.to_string())?.evidence.get(&task_id).map(|e| e.command.clone()).ok_or("this task has no evidence command")?;
-    let (code, _) = run_shell(p.root.clone(), cmd.clone()).await?;
-    code.map_err(|e| format!("cannot run `{cmd}`: {e}"))
+    Ok(run_shell(p.root.clone(), cmd).await??.exit_code)
 }
 
 #[tauri::command]

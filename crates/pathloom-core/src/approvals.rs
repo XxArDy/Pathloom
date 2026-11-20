@@ -17,9 +17,7 @@ fn bad(msg: impl Into<String>) -> Error {
     Error::InvalidSpec(msg.into())
 }
 
-fn stage_key(task_id: &str) -> &str {
-    task_id.split('-').next().unwrap_or("")
-}
+use crate::stagefile::stage_key_of as stage_key;
 
 fn clean(s: &str) -> String {
     s.replace("\r\n", "\n").trim().to_string()

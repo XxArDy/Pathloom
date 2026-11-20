@@ -261,6 +261,8 @@ impl Project {
 
     /// Apply a spec: all or nothing. With `dry_run` nothing is written but the report is complete.
     pub fn apply(&self, spec: &ApplySpec, opts: &ApplyOptions) -> Result<ApplyReport> {
+        // The `expected` hash check, planning and writing must see one consistent plan.
+        let _lock = self.lock_plan()?;
         let (report, files) = self.plan_apply(spec, opts)?;
         if !opts.dry_run {
             commit(&files)?;
@@ -311,7 +313,7 @@ impl Project {
                     let t = title.ok_or_else(|| bad("a stage without `id` needs a `title`"))?;
                     match stages.iter().find(|s| s.title == t) {
                         Some(s) => s.key.clone(),
-                        None => generate_key(t, &|k| idx.contains_key(k)),
+                        None => generate_key(t, &|k| idx.contains_key(k) || self.stage_path(k).exists()),
                     }
                 }
             };
@@ -319,6 +321,11 @@ impl Project {
                 return Err(Error::DuplicateKey(key));
             }
             if !idx.contains_key(&key) {
+                // Not in `stages` but on disk: the file does not parse. Creating it would overwrite the user's file.
+                if self.stage_path(&key).exists() {
+                    self.load_stage(&key)?;
+                    return Err(Error::DuplicateKey(key));
+                }
                 let t = title.ok_or_else(|| bad(format!("new stage {key} needs a `title`")))?;
                 stages.push(Stage::new(&key, t));
                 idx.insert(key.clone(), stages.len() - 1);
@@ -338,7 +345,12 @@ impl Project {
                 st.kind = k;
             }
             if let Some(d) = &ss.description {
-                st.description = d.trim().replace("\r\n", "\n");
+                let d = d.trim().replace("\r\n", "\n");
+                // Those headings would start a managed section and swallow the rest of the description.
+                if d.lines().any(|l| matches!(l.trim_end(), "## Tasks" | "## Comments")) {
+                    return Err(bad(format!("description of {key} must not contain a `## Tasks` or `## Comments` line")));
+                }
+                st.description = d;
             }
             if let Some(w) = &ss.who {
                 st.who = w.clone();

@@ -49,7 +49,7 @@ export function knownWhos(stages: StageView[], activity: LogEntry[], profiles: A
 /** Live claims of a stage keyed by task id (a claim on a parent covers its subtasks). */
 export function claimOf(stage: StageView, taskId: string): ClaimView | undefined {
   const claims = stage.claims ?? [];
-  return claims.find((c) => c.taskId === taskId) ?? claims.find((c) => taskId.startsWith(c.taskId) && /[a-z]$/.test(taskId));
+  return claims.find((c) => c.taskId === taskId) ?? claims.find((c) => /[a-z]$/.test(taskId) && taskId.slice(0, -1) === c.taskId);
 }
 
 /** "5 min ago" style relative time. */
