@@ -30,9 +30,13 @@ pub struct Project {
 fn check_plan_dir(plan_dir: &str) -> Result<()> {
     use std::path::Component;
     let pd = Path::new(plan_dir);
+    // Same answer on every OS: `\` counts as a separator and `:` (a Windows drive) is refused even on Unix,
+    // where Path would read `C:\x` as one plain file name.
     let bad = plan_dir.is_empty()
         || pd.is_absolute()
         || plan_dir.starts_with(['/', '\\'])
+        || plan_dir.contains(':')
+        || plan_dir.split(['/', '\\']).any(|c| c == "..")
         || pd.components().any(|c| matches!(c, Component::ParentDir | Component::Prefix(_) | Component::RootDir));
     if bad { Err(Error::OutsideProject(plan_dir.into())) } else { Ok(()) }
 }
