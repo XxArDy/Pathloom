@@ -1,18 +1,8 @@
 //! Plan templates for the CLI and MCP (core: `pathloom_core::templates`).
 
 use crate::ops::{self, ApiResult};
-use pathloom_core::{Project, list_templates, load_template};
+use pathloom_core::{Project, list_templates, load_template, user_templates_dir as user_dir};
 use serde_json::{Value, json};
-use std::path::PathBuf;
-
-/// `PATHLOOM_TEMPLATES_DIR`, else `~/.pathloom/templates` (`USERPROFILE` on Windows, `HOME` elsewhere).
-pub fn user_dir() -> Option<PathBuf> {
-    if let Some(d) = std::env::var_os("PATHLOOM_TEMPLATES_DIR") {
-        return Some(d.into());
-    }
-    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?;
-    Some(PathBuf::from(home).join(".pathloom").join("templates"))
-}
 
 pub fn list(lang: Option<&str>) -> Value {
     json!({"templates": list_templates(user_dir().as_deref(), lang.unwrap_or("en"))})

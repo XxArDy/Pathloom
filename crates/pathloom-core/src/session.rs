@@ -100,23 +100,22 @@ impl SessionRef {
 
 /// Add `s` to `list` (dedup by client+id: the old entry is replaced and moves to the end, keeping its
 /// `url`/`title`/`state` when `s` has none). Keeps only the newest [`MAX_STAGE_SESSIONS`].
-/// A given `state` gets `state_at` = now. Returns whether the state value changed
+/// A new `state` value gets `state_at` = now. Returns whether the state value changed
 /// (a new state on a new entry counts as a change).
 pub(crate) fn push_session(list: &mut Vec<SessionRef>, mut s: SessionRef) -> bool {
-    let mut old_state = None;
+    let (mut old_state, mut old_at) = (None, None);
     if let Some(i) = list.iter().position(|x| x.same(&s)) {
         let old = list.remove(i);
-        old_state = old.state;
+        (old_state, old_at) = (old.state, old.state_at.clone());
         s.url = s.url.or(old.url);
         s.title = s.title.or(old.title);
         if s.state.is_none() {
             (s.state, s.state_at) = (old.state, old.state_at);
         }
     }
-    if s.state.is_some() {
-        s.state_at = Some(crate::fsutil::now_rfc3339());
-    }
     let changed = s.state.is_some() && s.state != old_state;
+    // `state_at` = since when the session is in this state, so a repeated state keeps it.
+    s.state_at = if changed { Some(crate::fsutil::now_rfc3339()) } else { s.state_at.or(old_at) };
     list.push(s);
     if list.len() > MAX_STAGE_SESSIONS {
         list.drain(..list.len() - MAX_STAGE_SESSIONS);
@@ -126,13 +125,16 @@ pub(crate) fn push_session(list: &mut Vec<SessionRef>, mut s: SessionRef) -> boo
 
 impl crate::project::Project {
     /// Upsert `session` into the `sessions` of stage `key` (m10 §Б1). Returns whether the state value changed.
+    /// The stage file is written only when its session list changes (a repeated call writes nothing).
     pub fn update_session(&self, key: &str, session: SessionRef) -> Result<bool> {
         let session = session.normalize()?;
-        let mut changed = false;
-        self.edit_stage(key, |st| {
-            changed = push_session(&mut st.sessions, session);
-            Ok(())
-        })?;
+        let _lock = self.lock_plan()?;
+        let mut st = self.load_stage(key)?;
+        let before = st.sessions.clone();
+        let changed = push_session(&mut st.sessions, session);
+        if st.sessions != before {
+            self.save_stage(&st)?;
+        }
         Ok(changed)
     }
 }
@@ -185,7 +187,9 @@ mod tests {
         let with = |st| SessionRef { state: Some(st), ..s("m", "1", None) };
         assert!(push_session(&mut l, with(SessionState::Working)));
         assert!(l[0].state_at.is_some());
+        let before = l.clone();
         assert!(!push_session(&mut l, with(SessionState::Working)));
+        assert_eq!(l, before, "a repeated state changes nothing, so the stage file is not rewritten");
         assert!(!push_session(&mut l, s("m", "1", None)), "no state given: nothing changes");
         assert_eq!(l[0].state, Some(SessionState::Working));
         assert!(push_session(&mut l, with(SessionState::Done)));

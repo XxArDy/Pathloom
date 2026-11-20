@@ -127,6 +127,16 @@ fn review_keeps_evidence_and_stage_active() {
 }
 
 #[test]
+fn relay_needs_a_pending_request() {
+    let (_d, p) = setup(PLAN);
+    // no request: a client cannot invent an approval
+    assert!(matches!(p.relay_approval("APPR-01", true, &[], None, "telegram:bob"), Err(pathloom_core::Error::NotFound(_))));
+    p.request_approval("APPR-01", &[], None, "claude").unwrap();
+    p.relay_approval("APPR-01", true, &[], None, "telegram:bob").unwrap();
+    assert!(matches!(p.relay_approval("APPR-01", false, &[], None, "telegram:eve"), Err(pathloom_core::Error::AlreadyDecided { .. })));
+}
+
+#[test]
 fn decision_ask_answer() {
     let (_d, p) = setup(PLAN);
     assert!(p.ask_decision("DECIDE-01", "Q?", vec![], None, "claude").is_err());
@@ -139,7 +149,12 @@ fn decision_ask_answer() {
     assert_eq!((d.choice.as_deref(), d.by.as_str()), (Some("SQLite"), "me"));
     assert!(s.tasks[0].done);
     assert!(p.decisions(true).unwrap().is_empty() && p.decisions(false).unwrap().len() == 1);
-    // asking again clears the choice and reopens the task
+    // an agent cannot overwrite the owner's answer
+    let e = p.ask_decision("DECIDE-01", "Again?", opts("A"), None, "claude").unwrap_err();
+    assert!(matches!(e, pathloom_core::Error::AlreadyDecided { what: "decision", .. }), "{e:?}");
+    assert_eq!(p.decisions(false).unwrap().len(), 1);
+    // once the owner reopens the task, asking again clears the choice
+    p.set_task_done("DECIDE-01", false).unwrap();
     let s = p.ask_decision("DECIDE-01", "Again?", opts("A"), None, "claude").unwrap();
     assert!(!s.tasks[0].done && s.task_info["DECIDE-01"].decision.as_ref().unwrap().choice.is_none());
 }

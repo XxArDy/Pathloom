@@ -171,6 +171,8 @@ struct DecideProposalParams {
     /// true = apply it, false = reject it
     approve: bool,
     comment: Option<String>,
+    /// The person who decided, 1-64 characters. Never your own name: you only relay what a human said.
+    human: String,
     /// External client session you act from (client, id, url?, title?). Logged with the action.
     session: Option<SessionRef>,
 }
@@ -338,7 +340,7 @@ struct ImportParams {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct ExportParams {
-    /// md | csv | github (JSON array of issues {title, body, labels})
+    /// md | csv | github (JSON array of issues {title, body, labels}) | html (self-contained page)
     format: String,
 }
 
@@ -648,13 +650,13 @@ impl PathloomServer {
     }
 
     #[tool(
-        description = "Approve (applies the proposal as its author) or reject a pending proposal. Normally the user decides in the app; call this only when the user told you to. Returns the decision; state conflict = nothing applied."
+        description = "Relay a human's decision on a pending proposal: approve (applies it as its author) or reject. Only when the project has allow_client_answers = true (otherwise FORBIDDEN); `human` names the person who decided and must not be you. You can never decide your own proposals (FORBIDDEN). Returns the decision; state conflict = nothing applied."
     )]
     async fn decide_proposal(&self, Parameters(a): Parameters<DecideProposalParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
         finish((|| {
             self.guard()?;
             let actor = self.actor(&ctx, a.session)?;
-            ops::decide_proposal(&self.project()?, &actor, "decide_proposal", &a.id, a.approve, a.comment.as_deref())
+            ops::decide_proposal_for(&self.project()?, &actor, &a.id, a.approve, a.comment.as_deref(), &a.human)
         })())
     }
 
@@ -664,7 +666,7 @@ impl PathloomServer {
     async fn set_task(&self, Parameters(a): Parameters<SetTaskParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
         finish((|| {
             self.guard()?;
-            ops::set_task(&self.project()?, &self.actor(&ctx, a.session)?, "set_task", &a.task_id, a.done, a.evidence, true)
+            ops::set_task(&self.project()?, &self.actor(&ctx, a.session)?, if a.done { "task done" } else { "task undo" }, &a.task_id, a.done, a.evidence, true)
         })())
     }
 
@@ -765,7 +767,7 @@ impl PathloomServer {
     }
 
     #[tool(
-        description = "The plan as text: format md (Markdown checklist), csv, or github (JSON array of {title, body, labels}, one per open task; no network). Returns {format, text}.",
+        description = "The plan as text: format md (Markdown checklist), csv, github (JSON array of {title, body, labels}, one per open task; no network) or html (one self-contained read-only page). Returns {format, text}.",
         annotations(read_only_hint = true)
     )]
     async fn export_plan(&self, Parameters(a): Parameters<ExportParams>) -> CallToolResult {
@@ -781,12 +783,12 @@ impl PathloomServer {
     }
 
     #[tool(
-        description = "Undo one history entry by id. Fails with CONFLICT (details.paths) when those files changed since; nothing is written then. The revert is logged and can be reverted too."
+        description = "Undo one history entry by id. Fails with CONFLICT (details.paths) when those files changed since; nothing is written then. In review mode (agent_changes = review) agents may not revert: FORBIDDEN, ask the owner. The revert is logged and can be reverted too."
     )]
     async fn revert_change(&self, Parameters(a): Parameters<RevertParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
         finish((|| {
             self.guard()?;
-            ops::revert_change(&self.project()?, &self.actor(&ctx, None)?, &a.id)
+            ops::revert_change(&self.project()?, &self.actor(&ctx, None)?, &a.id, true)
         })())
     }
 

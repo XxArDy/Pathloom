@@ -153,6 +153,11 @@ impl Project {
         Self::load_proposal_file(path).ok()?.decision.map(|d| d.state)
     }
 
+    /// One pending proposal by id.
+    pub fn proposal(&self, id: &str) -> Result<Proposal> {
+        self.load_proposal(id)
+    }
+
     fn load_proposal(&self, id: &str) -> Result<Proposal> {
         let path = self.proposal_path(id)?;
         if !path.is_file() {
@@ -196,9 +201,14 @@ impl Project {
         Ok(out)
     }
 
-    /// First stage whose file differs from the hash recorded at proposal time (or that is gone).
+    /// First stage whose file differs from the hash recorded at proposal time (or that is gone), or a stage
+    /// the proposal creates that exists by now.
     fn stale_stage(&self, p: &Proposal) -> Option<String> {
-        p.stage_hashes.iter().find(|(k, h)| self.stage_hash(k).ok().as_ref() != Some(*h)).map(|(k, _)| k.clone())
+        p.stage_hashes
+            .iter()
+            .find(|(k, h)| self.stage_hash(k).ok().as_ref() != Some(*h))
+            .map(|(k, _)| k.clone())
+            .or_else(|| p.preview.created.iter().find(|k| self.stage_path(k).exists()).cloned())
     }
 
     /// Store the decision, move the file to `decided/` and prune old ones.
@@ -220,7 +230,8 @@ impl Project {
 
     /// Approve (apply as the author) or reject a pending proposal and move it to `decided/`.
     /// Approving when a stage changed since the proposal (or vanished) records `conflict` and applies nothing.
-    /// An apply error keeps the proposal pending.
+    /// An apply error keeps the proposal pending. Its author can never decide it (`by` = `author` or
+    /// `author:<human>`): [`Error::Forbidden`].
     pub fn decide_proposal(&self, id: &str, approve: bool, comment: Option<&str>, by: &str) -> Result<Proposal> {
         self.decide_inner(id, approve, comment, by).map(|(p, _)| p)
     }
@@ -229,6 +240,10 @@ impl Project {
         // Under the lock, so two deciders cannot both apply one proposal; a proposal decided meanwhile is gone (NotFound).
         let _lock = self.lock_plan()?;
         let p = self.load_proposal(id)?;
+        let by_agent = by.trim().split(':').next().unwrap_or_default();
+        if by_agent.eq_ignore_ascii_case(p.author.trim()) {
+            return Err(Error::Forbidden(format!("{by} cannot decide its own proposal {id}")));
+        }
         if !approve {
             return Ok((self.finish_proposal(p, DecisionState::Rejected, comment, by)?, None));
         }

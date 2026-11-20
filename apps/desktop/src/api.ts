@@ -35,7 +35,7 @@ export interface QuickDraft { title: string; stage: string | null; due: string |
 export interface ScheduleItem { key: string; title: string; start: string; finish: string; slack: number | null; float: number; critical: boolean; estimate: number }
 export interface Schedule { today: string; items: ScheduleItem[]; finish: string }
 export type ExportFormat = 'html' | 'md' | 'csv' | 'github';
-export type ImportFormat = 'md' | 'csv' | 'trello' | 'notion';
+export type ImportFormat = 'md' | 'csv' | 'trello' | 'notion' | 'spec-kit';
 export interface ImportPreview { stages: number; tasks: number; created: string[]; updated: string[]; warnings: string[] }
 export interface HistoryRow { id: string; at: string; action: string; files: string[] }
 

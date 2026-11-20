@@ -64,14 +64,15 @@ pub fn materialize(root: &Path, git_ref: &str, plan_dir: &str) -> Result<tempfil
     Ok(tmp)
 }
 
-/// True when the working tree has no changes.
+/// True when no tracked file has changes. Untracked files do not count: they never block a commit of one
+/// file or a fast-forward, and Pathloom's own state files would otherwise keep the tree "dirty" forever.
 pub fn is_clean(root: &Path) -> Result<bool> {
-    Ok(ok(root, &["status", "--porcelain"])?.is_empty())
+    Ok(ok(root, &["status", "--porcelain", "--untracked-files=no"])?.is_empty())
 }
 
 /// Fast-forwards the current branch to `git_ref`; `false` when that is not possible.
 pub fn ff_to(root: &Path, git_ref: &str) -> Result<bool> {
-    let out = run(root, &["merge", "--ff-only", "--quiet", git_ref]).map_err(git_err)?;
+    let out = run(root, &["merge", "--ff-only", "--quiet", "--end-of-options", git_ref]).map_err(git_err)?;
     Ok(out.status.success())
 }
 
@@ -143,11 +144,17 @@ mod tests {
         g(r, &["add", "-A"]);
         g(r, &["commit", "--quiet", "-m", "one"]);
         assert!(is_clean(r).unwrap());
+        write(r, "untracked.jsonl", b"queue");
+        assert!(is_clean(r).unwrap(), "untracked files do not make the tree dirty");
+        write(r, "b.txt", b"b");
+        g(r, &["add", "b.txt"]);
+        g(r, &["commit", "--quiet", "-m", "b"]);
         write(r, "a.txt", b"2");
         write(r, "b.txt", b"other");
         assert!(!is_clean(r).unwrap());
         commit_file(r, "a.txt", "two").unwrap();
         assert!(!is_clean(r).unwrap()); // b.txt untouched
+        assert!(!ff_to(r, "--help").unwrap(), "a ref is never read as an option");
         let two = ref_sha(r, "HEAD").unwrap();
         g(r, &["branch", "side", "HEAD~1"]);
         g(r, &["checkout", "--quiet", "side"]);

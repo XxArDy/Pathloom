@@ -539,7 +539,7 @@ fn approvals_decisions_and_inbox_via_cli() {
     let day = &p.json(&["decisions"])["decisions"][0]["at"].as_str().unwrap()[..10].to_string();
     assert_eq!(
         md.trim_end(),
-        format!("## DECIDE-01 — Which DB?\n- Рішення: SQLite\n- Хто/коли: me, {day}\n- Варіанти: SQLite (рекомендовано), Postgres")
+        format!("## DECIDE-01 — Which DB?\n- Decision: SQLite\n- By/when: me, {day}\n- Options: SQLite (recommended), Postgres")
     );
 }
 

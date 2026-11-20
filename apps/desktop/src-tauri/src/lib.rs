@@ -158,12 +158,21 @@ fn board_load(state: State<'_, AppState>, name: String) -> CmdResult<Board> {
 
 #[tauri::command]
 fn board_save(state: State<'_, AppState>, name: String, board: Board) -> CmdResult<()> {
-    with_project(&state, |p| p.save_board(&name, &board))
+    with_project(&state, |p| {
+        p.save_board(&name, &board)?;
+        // A history point only: canvas edits are too frequent for the activity log.
+        let _ = p.checkpoint("board_save");
+        Ok(())
+    })
 }
 
 #[tauri::command]
 fn board_create(state: State<'_, AppState>, name: String, title: String) -> CmdResult<Board> {
-    with_project(&state, |p| p.create_board(&name, &title))
+    with_project(&state, |p| {
+        let b = p.create_board(&name, &title)?;
+        log_app(p, "board_create", &format!("created board {name}"), vec![], vec![]);
+        Ok(b)
+    })
 }
 
 #[tauri::command]
@@ -180,6 +189,7 @@ fn stages_list(state: State<'_, AppState>) -> CmdResult<Vec<StageView>> {
 fn stage_create(state: State<'_, AppState>, title: String) -> CmdResult<StageView> {
     with_project(&state, |p| {
         let stage = p.create_stage(&title, None)?;
+        log_app(p, "stage_create", &format!("created {} {title}", stage.key), vec![stage.key.clone()], vec![]);
         let all = views(p)?;
         Ok(all.into_iter().find(|v| v.stage.key == stage.key))
     })?
@@ -205,6 +215,8 @@ fn task_toggle(state: State<'_, AppState>, task_id: String) -> CmdResult<Vec<Sta
             .find_map(|s| find_done(&s.tasks, &task_id))
             .ok_or_else(|| pathloom_core::Error::NotFound(task_id.clone()))?;
         p.set_task_done(&task_id, !done)?;
+        let (action, what) = if done { ("task undo", "reopened") } else { ("task done", "done") };
+        log_task(p, action, &format!("{task_id} {what}"), &task_id);
         views(p)
     })
 }
@@ -212,7 +224,9 @@ fn task_toggle(state: State<'_, AppState>, task_id: String) -> CmdResult<Vec<Sta
 #[tauri::command]
 fn task_add(state: State<'_, AppState>, key: String, title: String) -> CmdResult<Vec<StageView>> {
     with_project(&state, |p| {
-        p.add_task(&key, &title)?;
+        let stage = p.add_task(&key, &title)?;
+        let id = stage.tasks.last().map(|t| t.id.clone()).unwrap_or_default();
+        log_task(p, "task_add", &format!("added {id} {title}"), &id);
         views(p)
     })
 }
@@ -221,6 +235,7 @@ fn task_add(state: State<'_, AppState>, key: String, title: String) -> CmdResult
 fn stage_rename(state: State<'_, AppState>, key: String, title: String) -> CmdResult<Vec<StageView>> {
     with_project(&state, |p| {
         p.set_title(&key, &title)?;
+        log_app(p, "stage_rename", &format!("{key} renamed to {title}"), vec![key.clone()], vec![]);
         views(p)
     })
 }
@@ -229,6 +244,7 @@ fn stage_rename(state: State<'_, AppState>, key: String, title: String) -> CmdRe
 fn stage_update(state: State<'_, AppState>, key: String, meta: StageMeta) -> CmdResult<Vec<StageView>> {
     with_project(&state, |p| {
         p.update_meta(&key, meta)?;
+        log_app(p, "stage_update", &format!("updated {key}"), vec![key.clone()], vec![]);
         views(p)
     })
 }
@@ -242,6 +258,7 @@ fn stage_source(state: State<'_, AppState>, key: String) -> CmdResult<String> {
 fn stage_delete(state: State<'_, AppState>, key: String) -> CmdResult<Vec<StageView>> {
     with_project(&state, |p| {
         p.delete_stage(&key)?;
+        log_app(p, "stage_delete", &format!("deleted {key}"), vec![key.clone()], vec![]);
         views(p)
     })
 }
@@ -250,6 +267,7 @@ fn stage_delete(state: State<'_, AppState>, key: String) -> CmdResult<Vec<StageV
 fn task_rename(state: State<'_, AppState>, task_id: String, title: String) -> CmdResult<Vec<StageView>> {
     with_project(&state, |p| {
         p.rename_task(&task_id, &title)?;
+        log_task(p, "task_rename", &format!("{task_id} renamed to {title}"), &task_id);
         views(p)
     })
 }
@@ -258,6 +276,7 @@ fn task_rename(state: State<'_, AppState>, task_id: String, title: String) -> Cm
 fn task_remove(state: State<'_, AppState>, task_id: String) -> CmdResult<Vec<StageView>> {
     with_project(&state, |p| {
         p.remove_task(&task_id)?;
+        log_task(p, "task_remove", &format!("removed {task_id}"), &task_id);
         views(p)
     })
 }
@@ -266,6 +285,7 @@ fn task_remove(state: State<'_, AppState>, task_id: String) -> CmdResult<Vec<Sta
 fn subtask_add(state: State<'_, AppState>, task_id: String, title: String) -> CmdResult<Vec<StageView>> {
     with_project(&state, |p| {
         p.add_subtask(&task_id, &title)?;
+        log_task(p, "subtask_add", &format!("added subtask {title} to {task_id}"), &task_id);
         views(p)
     })
 }
@@ -287,6 +307,16 @@ fn agent_undo(state: State<'_, AppState>, group: u64) -> CmdResult<Vec<StageView
 
 /// Records an action done in the app in the activity log. Logging never fails the action.
 fn log_app(p: &Project, action: &str, summary: &str, stages: Vec<String>, files: Vec<String>) {
+    log_entry(p, action, summary, stages, vec![], files);
+}
+
+/// `log_app` for one task (its stage is derived from the id).
+fn log_task(p: &Project, action: &str, summary: &str, task_id: &str) {
+    let key = pathloom_core::stage_key_of(task_id).to_string();
+    log_entry(p, action, summary, vec![key], vec![task_id.to_string()], vec![]);
+}
+
+fn log_entry(p: &Project, action: &str, summary: &str, stages: Vec<String>, tasks: Vec<String>, files: Vec<String>) {
     let entry = LogEntry {
         at: pathloom_core::now_rfc3339(),
         author: "me".into(),
@@ -294,7 +324,7 @@ fn log_app(p: &Project, action: &str, summary: &str, stages: Vec<String>, files:
         action: action.into(),
         summary: summary.into(),
         stages,
-        tasks: vec![],
+        tasks,
         files,
         ..Default::default()
     };
@@ -352,6 +382,7 @@ fn stage_rename_key(state: State<'_, AppState>, key: String, new_key: String) ->
 fn task_note_set(state: State<'_, AppState>, task_id: String, note: String) -> CmdResult<Vec<StageView>> {
     with_project(&state, |p| {
         p.set_task_note(&task_id, &note)?;
+        log_task(p, "task_note", &format!("note on {task_id}"), &task_id);
         views(p)
     })
 }
@@ -372,6 +403,7 @@ fn task_file_add(state: State<'_, AppState>, task_id: String, path: String) -> C
             path.clone()
         };
         p.add_task_file(&task_id, &rel)?;
+        log_task(p, "task_file_add", &format!("attached {rel} to {task_id}"), &task_id);
         views(p)
     })
 }
@@ -380,6 +412,7 @@ fn task_file_add(state: State<'_, AppState>, task_id: String, path: String) -> C
 fn task_file_remove(state: State<'_, AppState>, task_id: String, path: String) -> CmdResult<Vec<StageView>> {
     with_project(&state, |p| {
         p.remove_task_file(&task_id, &path)?;
+        log_task(p, "task_file_remove", &format!("detached {path} from {task_id}"), &task_id);
         views(p)
     })
 }
@@ -476,6 +509,7 @@ fn asset_save(state: State<'_, AppState>, name: String, bytes: Vec<u8>) -> CmdRe
         let path = dir.join(&file);
         if !path.exists() {
             pathloom_core::write_file_atomic(&path, &bytes)?;
+            log_app(p, "asset_save", &format!("added image assets/{file}"), vec![], vec![format!("plan/assets/{file}")]);
         }
         Ok(format!("assets/{file}"))
     })
@@ -666,6 +700,7 @@ fn owner_action(app: &AppHandle, p: &Project, action: &str, task_id: &str, args:
         }
     }
     gitmode::append_queue(&p.root, item)?;
+    p.ensure_gitignore();
     gitmode::emit_status(app, p);
     Ok(None)
 }
@@ -703,8 +738,8 @@ fn approvals_decide(app: AppHandle, state: State<'_, AppState>, task_id: String,
             return views(p);
         }
         let key = pathloom_core::stage_key_of(&task_id).to_string();
-        let what = if approve { "approved" } else { "rejected" };
-        log_app(p, "decide_approval", &format!("{what} {task_id}"), vec![key], vec![]);
+        let (what, action) = if approve { ("approved", "approval approve") } else { ("rejected", "approval reject") };
+        log_entry(p, action, &format!("{what} {task_id}"), vec![key], vec![task_id.clone()], vec![]);
         views(p)
     })
 }
@@ -740,6 +775,7 @@ async fn evidence_recheck(state: State<'_, AppState>, task_id: String) -> CmdRes
 fn stage_link(state: State<'_, AppState>, from: String, to: String) -> CmdResult<Vec<StageView>> {
     with_project(&state, |p| {
         p.link(&from, &to, false)?;
+        log_app(p, "stage_link", &format!("{to} now depends on {from}"), vec![from.clone(), to.clone()], vec![]);
         views(p)
     })
 }
@@ -748,6 +784,7 @@ fn stage_link(state: State<'_, AppState>, from: String, to: String) -> CmdResult
 fn stage_unlink(state: State<'_, AppState>, from: String, to: String) -> CmdResult<Vec<StageView>> {
     with_project(&state, |p| {
         p.unlink(&from, &to)?;
+        log_app(p, "stage_unlink", &format!("{to} no longer depends on {from}"), vec![from.clone(), to.clone()], vec![]);
         views(p)
     })
 }
@@ -763,14 +800,7 @@ fn digest(state: State<'_, AppState>, since: String, today: String) -> CmdResult
     with_project(&state, |p| p.digest(&since, &today))
 }
 
-/// `PATHLOOM_TEMPLATES_DIR`, else `~/.pathloom/templates` (same rule as the CLI).
-fn templates_dir() -> Option<std::path::PathBuf> {
-    if let Some(d) = std::env::var_os("PATHLOOM_TEMPLATES_DIR") {
-        return Some(d.into());
-    }
-    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?;
-    Some(std::path::PathBuf::from(home).join(".pathloom").join("templates"))
-}
+use pathloom_core::user_templates_dir as templates_dir;
 
 #[tauri::command]
 fn templates_list(lang: String) -> Vec<pathloom_core::TemplateInfo> {
@@ -783,6 +813,7 @@ fn template_new(app: AppHandle, state: State<'_, AppState>, path: String, name: 
     let spec = pathloom_core::load_template(&id, &lang, templates_dir().as_deref()).map_err(|e| e.to_string())?;
     let project = Project::init(Path::new(&path), &name).map_err(|e| e.to_string())?;
     project.apply_template(spec).map_err(|e| e.to_string())?;
+    log_app(&project, "template", &format!("new project from template {id}"), vec![], vec![]);
     activate(&app, &state, project)
 }
 

@@ -1,7 +1,6 @@
 //! Commands for quick add, timeline, export/import and change history (docs/m10 А2, А5-А8).
 //! Thin wrappers over `pathloom-core`; the owner's edits from the app apply directly (no proposal).
 
-use std::io::Write;
 use std::path::Path;
 
 use pathloom_core::{ApplyOptions, ApplySpec, Draft, Project, Schedule, StageView};
@@ -43,25 +42,11 @@ pub fn schedule(state: State<'_, AppState>, today: String) -> CmdResult<Schedule
     with_project(&state, |p| p.schedule(&today))
 }
 
-fn export_text(p: &Project, format: &str) -> pathloom_core::Result<String> {
-    match format {
-        "html" => p.export_html(&pathloom_core::now_rfc3339()),
-        "md" => p.export_markdown(),
-        "csv" => p.export_csv(),
-        "github" => p.export_github_issues(),
-        _ => Err(pathloom_core::Error::InvalidSpec(format!("unknown export format `{format}`"))),
-    }
-}
-
-/// Writes the export to `path` (chosen in the save dialog) via a temp file in the same folder.
+/// Writes the export to `path` (chosen in the save dialog) atomically.
 #[tauri::command]
 pub fn export_write(state: State<'_, AppState>, format: String, path: String) -> CmdResult<()> {
-    let text = with_project(&state, |p| export_text(p, &format))?;
-    let target = Path::new(&path);
-    let dir = target.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(Path::new("."));
-    let mut tmp = tempfile::NamedTempFile::new_in(dir).map_err(|e| e.to_string())?;
-    tmp.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
-    tmp.persist(target).map_err(|e| e.error.to_string())?;
+    let text = with_project(&state, |p| p.export(&format, &pathloom_core::now_rfc3339()))?;
+    pathloom_core::write_file_atomic(Path::new(&path), text.as_bytes()).map_err(|e| e.to_string())?;
     with_project(&state, |p| {
         log_app(p, "export", &format!("exported the plan as {format}"), vec![], vec![]);
         Ok(())
@@ -83,13 +68,7 @@ fn import_spec(p: &Project, format: &str, path: &str) -> pathloom_core::Result<A
         return Err(pathloom_core::Error::InvalidSpec("the file is larger than 5 MB".into()));
     }
     let text = std::fs::read_to_string(path)?;
-    match format {
-        "md" => p.import_markdown(&text),
-        "csv" => p.import_csv(&text),
-        "trello" => p.import_trello(&text),
-        "notion" => p.import_notion(&text),
-        _ => Err(pathloom_core::Error::InvalidSpec(format!("unknown import format `{format}`"))),
-    }
+    Ok(p.import(format, &text, None)?.0)
 }
 
 /// Dry run: what an import would create or change.

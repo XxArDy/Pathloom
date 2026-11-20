@@ -49,7 +49,7 @@ pub use apply::{
 pub use board::BOARD_FORMAT;
 pub use check::run_check;
 pub use taskstatus::{TaskStatus, TaskStep};
-pub use templates::{TemplateInfo, list_templates, load_template};
+pub use templates::{TemplateInfo, list_templates, load_template, user_templates_dir};
 pub use claims::{Claim, ClaimView, Delegation, STALE_AFTER_SECS, DEFAULT_CLAIM_TTL_SECS, MAX_CLAIM_TTL_SECS, SILENT_AFTER_SECS};
 pub use log::{LogEntry, Quota, Usage, UsageSummary};
 pub use fsutil::{now_rfc3339, now_secs, write_file_atomic};

@@ -449,7 +449,6 @@
     "week": "Week",
     "overdue": "Overdue",
     "due": "Due",
-    "estimate": "Estimate (days)",
     "blocked": "Blocked",
     "waiting": "Waiting for me",
     "empty": "Nothing here.",
@@ -517,6 +516,7 @@
       "csv": "CSV",
       "trello": "Trello (JSON)",
       "notion": "Notion (CSV)",
+      "spec-kit": "Spec Kit (tasks.md)",
       "counts": "{{stages}} stages, {{tasks}} tasks",
       "created": "New stages: {{list}}",
       "updated": "Updated stages: {{list}}",
@@ -548,6 +548,8 @@
     "ok": "Save"
   },
   "link": {
-    "copy": "Copy link to this card"
+    "copy": "Copy link to this card",
+    "openTitle": "Open project from link",
+    "confirmOpen": "A link asks to open a project you have not opened before:\n{{path}}\n\nOpen it?"
   }
 }

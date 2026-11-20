@@ -23,7 +23,13 @@ fn capabilities_read_only_vs_full() {
     assert_eq!(PROTOCOL, "pathloom/1");
     let full = capabilities(false);
     let ro = capabilities(true);
-    assert_eq!(ro, ["read", "activity", "events", "validate", "commits", "agenda", "digest", "approval_events", "task_events", "watch_filter", "schedule", "export_html", "export", "links"]);
+    assert_eq!(
+        ro,
+        [
+            "read", "activity", "events", "validate", "commits", "agenda", "digest", "approval_events", "task_events", "watch_filter",
+            "schedule", "export_html", "export", "links", "approvals", "decisions", "proposals", "history", "templates", "quick_add"
+        ]
+    );
     for c in ["read", "apply", "proposals", "claims", "activity", "agents", "events", "sessions", "layout", "validate"] {
         assert!(full.contains(&c), "{c}");
     }
@@ -158,11 +164,12 @@ fn concurrent_claims_exactly_one_wins() {
     assert_eq!(wins, 1, "{results:?}");
     assert!(results.iter().filter(|r| r.is_err()).all(|r| matches!(r, Err(Error::Claimed { .. }))));
     assert_eq!(p.claims().unwrap().len(), 1);
-    assert!(!p.root.join(".pathloom/claims.lock").exists(), "lock released");
+    // The lock was released: the next locked call does not time out.
+    p.release_task("A-01", "me", true).unwrap();
 }
 
 #[test]
-fn stale_lock_is_removed() {
+fn leftover_lock_file_does_not_block() {
     let (_d, p) = setup();
     let lock = p.root.join(".pathloom/claims.lock");
     std::fs::write(&lock, "").unwrap();

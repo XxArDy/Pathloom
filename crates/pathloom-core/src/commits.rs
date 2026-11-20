@@ -14,13 +14,6 @@ pub struct CommitRef {
     pub tasks: Vec<String>,
 }
 
-fn is_key(s: &str) -> bool {
-    let mut c = s.chars();
-    matches!(c.next(), Some('A'..='Z'))
-        && s.len() <= 10
-        && c.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
-}
-
 fn push_unique(v: &mut Vec<String>, s: String) {
     if !v.contains(&s) {
         v.push(s);
@@ -48,7 +41,7 @@ fn parse(subject: &str) -> Option<(Vec<String>, Vec<String>)> {
             Some((k, n)) => (k, Some(n)),
             None => (part, None),
         };
-        if !is_key(key) {
+        if !crate::stagefile::is_valid_key(key) {
             return None;
         }
         push_unique(&mut stages, key.to_string());
@@ -146,7 +139,8 @@ mod tests {
     #[test]
     fn dedupes_and_key_edges() {
         assert_eq!(p("A-1, 1: x"), (v(&["A"]), v(&["A-1"])));
-        assert_eq!(p("A1B2C3D4E5-7: x").0, v(&["A1B2C3D4E5"]));
+        assert_eq!(p("A1B2C3D4-7: x").0, v(&["A1B2C3D4"]));
+        assert_eq!(p("A1B2C3D4E-7: x"), (v(&[]), v(&[])), "keys are at most 8 characters");
     }
 
     #[test]

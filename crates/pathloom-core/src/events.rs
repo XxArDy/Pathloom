@@ -133,11 +133,6 @@ impl EventFilter {
     }
 }
 
-/// Stage key of a task id (`AUTH-02a` -> `AUTH`).
-fn stage_of(task_id: &str) -> &str {
-    task_id.split('-').next().unwrap_or("")
-}
-
 /// Whether `e` passes `f`.
 pub fn passes(e: &Event, f: &EventFilter) -> bool {
     if matches!(e, Event::Hello { .. }) {
@@ -148,9 +143,9 @@ pub fn passes(e: &Event, f: &EventFilter) -> bool {
     }
     let keys: Vec<&str> = match e {
         Event::Stage { key, .. } => vec![key],
-        Event::Approval { task_id, .. } | Event::Decision { task_id, .. } | Event::Task { task_id, .. } => vec![stage_of(task_id)],
+        Event::Approval { task_id, .. } | Event::Decision { task_id, .. } | Event::Task { task_id, .. } => vec![crate::stagefile::stage_key_of(task_id)],
         Event::Activity { entry } => {
-            entry.stages.iter().map(String::as_str).chain(entry.tasks.iter().map(|t| stage_of(t))).collect()
+            entry.stages.iter().map(String::as_str).chain(entry.tasks.iter().map(|t| crate::stagefile::stage_key_of(t))).collect()
         }
         _ => vec![],
     };

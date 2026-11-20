@@ -51,21 +51,12 @@ pub(crate) fn format_minute(secs: i64) -> String {
     format!("{}Z", &format_secs(secs)[..16])
 }
 
-/// Unix seconds to RFC3339 UTC `YYYY-MM-DDTHH:MM:SSZ` (civil-from-days, H. Hinnant).
+/// Unix seconds to RFC3339 UTC `YYYY-MM-DDTHH:MM:SSZ` (date part: [`crate::agenda::days_to_date`]).
 /// Fixed width, so the strings compare in time order.
 pub(crate) fn format_secs(secs: i64) -> String {
-    let days = secs.div_euclid(86_400);
     let rem = secs.rem_euclid(86_400);
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = yoe + era * 400 + i64::from(m <= 2);
-    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
+    let date = crate::agenda::days_to_date(secs.div_euclid(86_400));
+    format!("{date}T{:02}:{:02}:{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
 }
 
 /// Public atomic write (temp file, fsync, rename) that also records the write in [`crate::writes`].
@@ -77,15 +68,14 @@ pub fn write_file_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 
-/// Cross-process lock: a lock file created with `create_new`, removed on drop.
-/// Waits up to ~2 s; a lock file older than 10 s is stale (its owner died) and is removed.
-/// shortcut: two processes may both see a lock as stale and one removes the other's fresh lock;
-/// only after a crash and within the same few ms, so not worth an OS-level lock yet.
-pub(crate) struct FileLock(std::path::PathBuf);
+/// Cross-process lock: an OS file lock (`File::try_lock`) on `path`, released when dropped (or when the
+/// process dies, so there is no stale-lock guessing). Waits up to the given time, then fails with `TimedOut`.
+/// The lock file itself stays on disk (it is git-ignored); deleting it would race with the next locker.
+pub(crate) struct FileLock {
+    _file: std::fs::File,
+}
 
 impl FileLock {
-    const STALE: Duration = Duration::from_secs(10);
-
     pub(crate) fn acquire(path: &Path) -> Result<FileLock> {
         Self::acquire_for(path, Duration::from_secs(2))
     }
@@ -94,33 +84,20 @@ impl FileLock {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
+        let file = std::fs::OpenOptions::new().read(true).write(true).create(true).truncate(false).open(path)?;
         let deadline = std::time::Instant::now() + wait;
         loop {
-            match std::fs::OpenOptions::new().write(true).create_new(true).open(path) {
-                Ok(_) => return Ok(FileLock(path.to_path_buf())),
-                // Windows reports a lock file being deleted as PermissionDenied.
-                Err(e) if matches!(e.kind(), ErrorKind::AlreadyExists | ErrorKind::PermissionDenied) => {
-                    let stale = std::fs::metadata(path)
-                        .and_then(|m| m.modified())
-                        .is_ok_and(|t| t.elapsed().is_ok_and(|age| age > Self::STALE));
-                    if stale {
-                        let _ = std::fs::remove_file(path);
-                        continue;
-                    }
+            match file.try_lock() {
+                Ok(()) => return Ok(FileLock { _file: file }),
+                Err(std::fs::TryLockError::WouldBlock) => {
                     if std::time::Instant::now() >= deadline {
                         return Err(std::io::Error::new(ErrorKind::TimedOut, format!("lock {} is busy", path.display())).into());
                     }
                     std::thread::sleep(Duration::from_millis(5));
                 }
-                Err(e) => return Err(e.into()),
+                Err(std::fs::TryLockError::Error(e)) => return Err(e.into()),
             }
         }
-    }
-}
-
-impl Drop for FileLock {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
     }
 }
 
@@ -158,6 +135,17 @@ impl Drop for ReentrantLock {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn file_lock_excludes_and_times_out() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("x.lock");
+        let held = super::FileLock::acquire(&path).unwrap();
+        let busy = super::FileLock::acquire_for(&path, std::time::Duration::from_millis(30));
+        assert!(matches!(busy, Err(crate::Error::Io(e)) if e.kind() == std::io::ErrorKind::TimedOut));
+        drop(held);
+        assert!(super::FileLock::acquire_for(&path, std::time::Duration::from_millis(30)).is_ok());
+    }
+
     #[test]
     fn minute_format() {
         assert_eq!(super::format_minute(0), "1970-01-01T00:00Z");

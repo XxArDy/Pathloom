@@ -11,6 +11,11 @@ const CONFIG: &str = ".pathloom/project.toml";
 const BOARD_SUFFIX: &str = ".board.json";
 
 const PLAN_LOCK: &str = ".pathloom/plan.lock";
+/// Machine state in `.pathloom/` that git must not see (`.pathloom/.gitignore`; old projects are migrated
+/// by [`Project::ensure_gitignore`]). An untracked `owner-queue.jsonl` would also keep git mode "dirty".
+pub(crate) const IGNORED: &[&str] = &[
+    "cache/", "proposals/", "log/", "claims.json", "claims.lock", "plan.lock", "history/", "owner-queue.jsonl", "telegram.json",
+];
 
 /// Held while a plan file is read-modified-written; see [`Project::lock_plan`].
 pub(crate) type PlanGuard = ReentrantLock;
@@ -121,7 +126,7 @@ impl Project {
         };
         let text = toml::to_string(&config).map_err(|e| parse_err(&cfg_path, e))?;
         write_atomic(&cfg_path, text.as_bytes())?;
-        write_atomic(&root.join(".pathloom/.gitignore"), b"cache/\nproposals/\nlog/\nclaims.json\nclaims.lock\nplan.lock\nhistory/\n")?;
+        write_atomic(&root.join(".pathloom/.gitignore"), format!("{}\n", IGNORED.join("\n")).as_bytes())?;
         let p = Project { root: root.to_path_buf(), config };
         std::fs::create_dir_all(p.plan_dir().join("stages"))?;
         if !p.board_path("roadmap").exists() {
@@ -216,6 +221,11 @@ impl Project {
 
     pub(crate) fn stage_path(&self, key: &str) -> PathBuf {
         self.plan_dir().join("stages").join(format!("{key}.md"))
+    }
+
+    /// Project-relative path of a stage file with `/` separators (`plan/stages/KEY.md`), for logs and commits.
+    pub fn stage_rel_path(&self, key: &str) -> String {
+        format!("{}/stages/{key}.md", self.config.plan_dir.trim_end_matches('/'))
     }
 
     // ---- boards ----
@@ -511,7 +521,8 @@ impl Project {
     }
 
     /// Set the delivery status of a task (`task_info.<ID>.status`). `sha` is 7-40 hex, `evidence` up to 10
-    /// paths/links (same rules as task files); `at` is now.
+    /// paths/links (same rules as task files); `at` is now. `Accepted` is refused: only the owner's approval
+    /// ([`Project::decide_approval`]) sets it.
     pub fn set_task_status(
         &self,
         task_id: &str,
@@ -521,6 +532,9 @@ impl Project {
         evidence: &[String],
         by: &str,
     ) -> Result<Stage> {
+        if step == crate::TaskStep::Accepted {
+            return Err(Error::Forbidden("`accepted` is set only when the owner approves the task".into()));
+        }
         let st = crate::TaskStatus {
             step,
             branch: branch.map(String::from),

@@ -180,16 +180,16 @@ impl Project {
     fn write_claims(&self, claims: Vec<Claim>) -> Result<()> {
         let text = serde_json::to_string_pretty(&ClaimFile { claims }).map_err(|e| Error::InvalidSpec(e.to_string()))?;
         write_atomic(&self.claims_path(), text.as_bytes())?;
-        self.ensure_claims_ignored();
+        self.ensure_gitignore();
         Ok(())
     }
 
-    /// Make sure `.pathloom/.gitignore` lists `claims.json` and `claims.lock` (older projects lack them). Best effort.
-    fn ensure_claims_ignored(&self) {
+    /// Make sure `.pathloom/.gitignore` lists the machine-state files (older projects lack some). Best effort.
+    pub fn ensure_gitignore(&self) {
         let path = self.root.join(GITIGNORE);
         let cur = std::fs::read_to_string(&path).unwrap_or_default();
         let mut text = cur.clone();
-        for name in ["claims.json", "claims.lock", "plan.lock"] {
+        for &name in crate::project::IGNORED {
             if text.lines().any(|l| l.trim() == name) {
                 continue;
             }
@@ -594,6 +594,6 @@ mod tests {
         std::fs::write(&gi, "cache/").unwrap(); // old project, no trailing newline
         p.claim_task("A-01", "claude", 60, "").unwrap();
         p.claim_task("A-01", "claude", 60, "").unwrap();
-        assert_eq!(std::fs::read_to_string(&gi).unwrap(), "cache/\nclaims.json\nclaims.lock\nplan.lock\n");
+        assert_eq!(std::fs::read_to_string(&gi).unwrap(), "cache/\nproposals/\nlog/\nclaims.json\nclaims.lock\nplan.lock\nhistory/\nowner-queue.jsonl\ntelegram.json\n");
     }
 }
