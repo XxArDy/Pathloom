@@ -18,6 +18,7 @@ fn ev(cmd: &str, code: i32) -> Evidence {
         summary: Some("94 passed".into()),
         log: None,
         commit: None,
+        branch: None,
         at: String::new(),
         by: "claude".into(),
     }

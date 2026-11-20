@@ -65,6 +65,7 @@ fn evidence_commit_is_validated_and_stored() {
         summary: None,
         log: None,
         commit: Some(commit.into()),
+        branch: None,
         at: String::new(),
         by: "c".into(),
     };

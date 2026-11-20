@@ -13,7 +13,7 @@ fn setup() -> (tempfile::TempDir, Project) {
 }
 
 fn sess(id: &str) -> SessionRef {
-    SessionRef { client: "maestro".into(), id: id.into(), url: Some(format!("maestro://session/{id}")), title: Some("Implement auth".into()) }
+    SessionRef { client: "maestro".into(), id: id.into(), url: Some(format!("maestro://session/{id}")), title: Some("Implement auth".into()), state: None, state_at: None }
 }
 
 // ---- protocol ----
@@ -23,7 +23,7 @@ fn capabilities_read_only_vs_full() {
     assert_eq!(PROTOCOL, "pathloom/1");
     let full = capabilities(false);
     let ro = capabilities(true);
-    assert_eq!(ro, ["read", "activity", "events", "validate", "commits", "agenda", "digest"]);
+    assert_eq!(ro, ["read", "activity", "events", "validate", "commits", "agenda", "digest", "approval_events", "task_events", "watch_filter"]);
     for c in ["read", "apply", "proposals", "claims", "activity", "agents", "events", "sessions", "layout", "validate"] {
         assert!(full.contains(&c), "{c}");
     }
@@ -76,7 +76,7 @@ fn stage_sessions_roundtrip_through_frontmatter() {
     let (_d, p) = setup();
     let mut s = p.load_stage("A").unwrap();
     assert!(s.sessions.is_empty());
-    s.sessions = vec![sess("sess_1"), SessionRef { client: "codex".into(), id: "x y".into(), url: None, title: None }];
+    s.sessions = vec![sess("sess_1"), SessionRef { client: "codex".into(), id: "x y".into(), url: None, title: None, state: None, state_at: None }];
     p.save_stage(&s).unwrap();
     let text = p.stage_source("A").unwrap();
     assert!(text.contains("sessions: [{client: maestro, id: sess_1, url: \"maestro://session/sess_1\", title: Implement auth}"), "{text}");
@@ -135,7 +135,7 @@ fn claim_with_session_links_stage_and_log_keeps_session() {
     assert_eq!(p.claims().unwrap()[0].session, Some(sess("s1")));
     let views = p.stage_views_live().unwrap();
     assert_eq!(views[0].claims[0].session, Some(sess("s1")));
-    assert!(p.claim_task_with("A-01", "x", 60, "", Some(&SessionRef { client: "BAD".into(), id: "1".into(), url: None, title: None })).is_err());
+    assert!(p.claim_task_with("A-01", "x", 60, "", Some(&SessionRef { client: "BAD".into(), id: "1".into(), url: None, title: None, state: None, state_at: None })).is_err());
     p.log_action(&LogEntry { author: "maestro".into(), action: "claim_task".into(), session: Some(sess("s1")), ..Default::default() }).unwrap();
     assert_eq!(p.read_log(1, None).unwrap()[0].session, Some(sess("s1")));
     p.log_action(&LogEntry { action: "plain".into(), ..Default::default() }).unwrap();

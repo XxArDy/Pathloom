@@ -9,12 +9,13 @@ use crate::error::{Error, Result};
 use crate::fsutil::now_rfc3339;
 use crate::hash::hash_bytes;
 use crate::log::LogEntry;
+use crate::model::{ApprovalState, TaskInfo};
 use crate::project::Project;
 use crate::proposals::DecisionState;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -65,9 +66,114 @@ pub enum Event {
         at: String,
     },
     Agents { at: String },
+    /// An approval was requested or decided (m10 §Б2). Computed from the `task_info` of the changed stage.
+    Approval { task_id: String, change: ApprovalChange, state: ApprovalState, by: String, at: String },
+    /// A decision was asked or answered (m10 §Б2).
+    Decision {
+        task_id: String,
+        change: DecisionChange,
+        /// Only with `change: answered`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        choice: Option<String>,
+        by: String,
+        at: String,
+    },
+    /// The task was returned: its approval was rejected (m10 §Б3). The client continues the same session.
+    Task {
+        task_id: String,
+        change: TaskChange,
+        comment: String,
+        reasons: Vec<String>,
+        by: String,
+        at: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ApprovalChange {
+    Requested,
+    Decided,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DecisionChange {
+    Asked,
+    Answered,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TaskChange {
+    Returned,
+}
+
+/// Event types accepted by [`EventFilter`] (`--type`).
+pub const EVENT_TYPES: [&str; 10] =
+    ["hello", "stage", "board", "claims", "activity", "proposal", "agents", "approval", "decision", "task"];
+
+/// Which events `pathloom watch` prints (m10 §Б8). Empty lists = no restriction.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EventFilter {
+    /// Only events of these stages. Applies to events that carry a stage key or a task id (`stage`, `approval`,
+    /// `decision`, `task`, `activity` with stages/tasks); the others pass.
+    pub stages: Vec<String>,
+    /// Only these event types. `hello` always passes.
+    pub types: Vec<String>,
+}
+
+impl EventFilter {
+    /// Check the type names; unknown ones are an error message.
+    pub fn validate(&self) -> std::result::Result<(), String> {
+        match self.types.iter().find(|t| !EVENT_TYPES.contains(&t.as_str())) {
+            Some(t) => Err(format!("unknown event type `{t}` (one of {})", EVENT_TYPES.join(", "))),
+            None => Ok(()),
+        }
+    }
+}
+
+/// Stage key of a task id (`AUTH-02a` -> `AUTH`).
+fn stage_of(task_id: &str) -> &str {
+    task_id.split('-').next().unwrap_or("")
+}
+
+/// Whether `e` passes `f`.
+pub fn passes(e: &Event, f: &EventFilter) -> bool {
+    if matches!(e, Event::Hello { .. }) {
+        return true;
+    }
+    if !f.types.is_empty() && !f.types.iter().any(|t| t == e.type_name()) {
+        return false;
+    }
+    let keys: Vec<&str> = match e {
+        Event::Stage { key, .. } => vec![key],
+        Event::Approval { task_id, .. } | Event::Decision { task_id, .. } | Event::Task { task_id, .. } => vec![stage_of(task_id)],
+        Event::Activity { entry } => {
+            entry.stages.iter().map(String::as_str).chain(entry.tasks.iter().map(|t| stage_of(t))).collect()
+        }
+        _ => vec![],
+    };
+    f.stages.is_empty() || keys.is_empty() || keys.iter().any(|k| f.stages.iter().any(|s| s == k))
 }
 
 impl Event {
+    /// The `type` tag.
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Event::Hello { .. } => "hello",
+            Event::Stage { .. } => "stage",
+            Event::Board { .. } => "board",
+            Event::Claims { .. } => "claims",
+            Event::Activity { .. } => "activity",
+            Event::Proposal { .. } => "proposal",
+            Event::Agents { .. } => "agents",
+            Event::Approval { .. } => "approval",
+            Event::Decision { .. } => "decision",
+            Event::Task { .. } => "task",
+        }
+    }
+
     /// The first event of every stream.
     pub fn hello() -> Event {
         Event::Hello { protocol: crate::PROTOCOL.into(), version: env!("CARGO_PKG_VERSION").into(), at: now_rfc3339() }
@@ -98,6 +204,16 @@ impl std::fmt::Display for Event {
                 None => write!(f, "{at}  proposal {id} {}", change.as_str()),
             },
             Event::Agents { at } => write!(f, "{at}  agents changed"),
+            Event::Approval { task_id, change, state, by, at } => {
+                write!(f, "{at}  approval {task_id} {} ({}) by {by}", if *change == ApprovalChange::Requested { "requested" } else { "decided" }, state.as_str())
+            }
+            Event::Decision { task_id, change, choice, by, at } => match choice {
+                Some(c) => write!(f, "{at}  decision {task_id} answered by {by}: {c}"),
+                None => write!(f, "{at}  decision {task_id} {} by {by}", if *change == DecisionChange::Asked { "asked" } else { "answered" }),
+            },
+            Event::Task { task_id, comment, reasons, by, at, .. } => {
+                write!(f, "{at}  task {task_id} returned by {by} [{}]: {comment}", reasons.join(", "))
+            }
         }
     }
 }
@@ -215,6 +331,8 @@ struct Tracker {
     log_file: PathBuf,
     old_log_file: PathBuf,
     stages: HashMap<String, String>,
+    /// Parsed `task_info` per stage, to turn changes into approval/decision events.
+    infos: HashMap<String, BTreeMap<String, TaskInfo>>,
     boards: HashMap<String, String>,
     proposals: HashSet<String>,
     decided: HashSet<String>,
@@ -263,6 +381,7 @@ impl Tracker {
             old_log_file: d.log_dir.join("agent.1.jsonl"),
             project,
             stages: HashMap::new(),
+            infos: HashMap::new(),
             boards: HashMap::new(),
             proposals: HashSet::new(),
             decided: HashSet::new(),
@@ -273,6 +392,9 @@ impl Tracker {
         for p in files_with_ext(&t.stages_dir, "md") {
             if let (Some(k), Some(h)) = (p.file_stem().and_then(|s| s.to_str()), file_hash(&p)) {
                 t.stages.insert(k.to_string(), h);
+                if let Ok(st) = t.project.load_stage(k) {
+                    t.infos.insert(k.to_string(), st.task_info);
+                }
             }
         }
         let mut files = Vec::new();
@@ -330,7 +452,9 @@ impl Tracker {
             match kind {
                 Kind::Stage(key) => {
                     if let Some(change) = diff(&mut self.stages, key.clone(), p) {
+                        let extra = self.task_events(&key, change != Change::Deleted, &at);
                         out.push(Event::Stage { key, change, at: at.clone() });
+                        out.extend(extra);
                     }
                 }
                 Kind::Board(name) => {
@@ -379,6 +503,40 @@ impl Tracker {
                 return;
             }
         }
+    }
+
+    /// Approval / decision / returned events from the change of `task_info` of stage `key`; updates the snapshot.
+    fn task_events(&mut self, key: &str, exists: bool, at: &str) -> Vec<Event> {
+        if !exists {
+            self.infos.remove(key);
+            return vec![];
+        }
+        let Ok(stage) = self.project.load_stage(key) else { return vec![] }; // half-written: the next notification settles it
+        let old = self.infos.insert(key.to_string(), stage.task_info.clone()).unwrap_or_default();
+        let mut out = Vec::new();
+        for (id, info) in &stage.task_info {
+            let prev = old.get(id);
+            let task_id = id.clone();
+            if let Some(a) = info.approval.as_ref().filter(|a| prev.and_then(|p| p.approval.as_ref()) != Some(a)) {
+                if a.state == ApprovalState::Pending {
+                    let when = if a.requested_at.is_empty() { at } else { &a.requested_at };
+                    out.push(Event::Approval { task_id: task_id.clone(), change: ApprovalChange::Requested, state: a.state, by: a.requested_by.clone(), at: when.into() });
+                } else {
+                    let when = if a.at.is_empty() { at } else { &a.at };
+                    out.push(Event::Approval { task_id: task_id.clone(), change: ApprovalChange::Decided, state: a.state, by: a.by.clone(), at: when.into() });
+                    if a.state == ApprovalState::Rejected {
+                        out.push(Event::Task { task_id: task_id.clone(), change: TaskChange::Returned, comment: a.comment.clone(), reasons: a.reasons.clone(), by: a.by.clone(), at: when.into() });
+                    }
+                }
+            }
+            if let Some(d) = info.decision.as_ref().filter(|d| prev.and_then(|p| p.decision.as_ref()) != Some(d)) {
+                match &d.choice {
+                    None => out.push(Event::Decision { task_id, change: DecisionChange::Asked, choice: None, by: d.asked_by.clone(), at: at.into() }),
+                    Some(c) => out.push(Event::Decision { task_id, change: DecisionChange::Answered, choice: Some(c.clone()), by: d.by.clone(), at: d.at.clone() }),
+                }
+            }
+        }
+        out
     }
 
     /// New complete log lines since the last offset. A shrunk file means rotation: the unread rest of the

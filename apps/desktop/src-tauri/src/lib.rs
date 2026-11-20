@@ -435,6 +435,7 @@ async fn gate_run(state: State<'_, AppState>, key: String) -> CmdResult<Vec<Stag
         summary: None,
         log: None,
         commit: None,
+        branch: None,
         at: String::new(),
         by: "me".into(),
     };

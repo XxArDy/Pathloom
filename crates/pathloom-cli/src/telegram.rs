@@ -300,6 +300,10 @@ fn handle_callback(bot: &Bot, p: &Project, chat: &str, cq: &Value) -> Result<(),
             answer(&result)?;
             edit_text(&format!("{result} by {by}"))
         }
+        Err(e) if e.code == "ALREADY_DECIDED" => {
+            answer("already decided")?;
+            edit_text(&format!("already decided by {}", e.details["by"].as_str().unwrap_or("someone")))
+        }
         Err(e) => answer(&e.message.chars().take(150).collect::<String>()),
     }
 }

@@ -425,6 +425,9 @@ pub struct ProjectConfig {
     /// Agents (MCP) cannot close tasks: `done` puts them in review until the owner approves.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub require_approval: bool,
+    /// Clients (MCP) may relay a human's answer to approvals and decisions (`respond_approval`, `answer_decision`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub allow_client_answers: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

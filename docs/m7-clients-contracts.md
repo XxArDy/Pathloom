@@ -47,11 +47,16 @@
 {"type":"proposal","id":"01J...","change":"created|deleted","at":"..."}
 {"type":"proposal","id":"01J...","change":"decided","state":"approved|rejected|conflict","at":"..."}   // file moved to proposals/decided/; no `deleted` for it
 {"type":"agents","at":"..."}
+{"type":"approval","task_id":"DEV-01","change":"requested|decided","state":"pending|approved|rejected","by":"...","at":"..."}   // m10 Б2
+{"type":"decision","task_id":"DECIDE-01","change":"asked|answered","choice":"...","by":"...","at":"..."}   // `choice` only when answered
+{"type":"task","task_id":"DEV-01","change":"returned","comment":"...","reasons":["quality"],"by":"...","at":"..."}   // m10 Б3: an approval was rejected
 ```
 - Debounce 200 мс; події дедуплікуються в межах вікна.
 - `activity` — нові рядки журналу (tail), по одному на подію.
 - Без `--json` — короткий людський формат.
 - `--since <RFC3339>` спершу віддає записи журналу після цього часу (щоб клієнт наздогнав пропущене), потім живі події.
+- `approval`, `decision`, `task` (m10 §Б2-Б3) обчислюються з різниці `task_info` стадії при зміні її файлу (watcher тримає розібраний знімок), тож приходять після `stage updated`. `task returned` іде одразу після `approval decided` зі станом `rejected` (будь-хто відхилив): клієнт продовжує ту саму сесію з `comment` і `reasons`. Capabilities: `approval_events`, `task_events`.
+- Фільтр (m10 §Б8, capability `watch_filter`): `pathloom watch --json [--stage KEY]... [--type stage,approval,...]`. `--type`: `stage|board|claims|activity|proposal|agents|approval|decision|task` (через кому або повторами; невідомий тип — `INVALID_SPEC`); `hello` проходить завжди. `--stage` відсікає лише події, що несуть ключ етапу або id задачі (`stage`, `approval`, `decision`, `task`, `activity` зі `stages`/`tasks`; етап із id задачі до першого `-`); решта (`board`, `claims`, `proposal`, `agents`, `hello`) проходять. Ядро: `pathloom_core::events::{EventFilter, passes}`.
 - Завершення: Ctrl+C / закриття stdin не потрібне, клієнт просто вбиває процес.
 - Ядро: `pathloom_core::events::{Event, EventWatcher}` (окремий модуль на `notify`), щоб застосунок колись міг перейти на той самий код.
 
@@ -59,9 +64,10 @@
 
 Структура:
 ```json
-{ "client": "maestro", "id": "sess_8f2", "url": "maestro://session/sess_8f2", "title": "Implement auth" }
+{ "client": "maestro", "id": "sess_8f2", "url": "maestro://session/sess_8f2", "title": "Implement auth", "state": "working", "state_at": "2026-11-20T10:00:00Z" }
 ```
 - `client`: `[a-z0-9._-]{1,32}`; `id`: ≤ 128 друкованих символів; `url`: необов'язковий, `http(s)://` або власна схема `[a-z][a-z0-9+.-]*://` (без `javascript:`, `data:`, `file:`); `title`: ≤ 120.
+- `state` (m10 §Б1, необов'язковий): `working|waiting|blocked|error|done`; `state_at` ставить Pathloom при кожній передачі `state`. Старі файли й клієнти без цих полів працюють як раніше; повторний запис сесії без `state` лишає старий. MCP `update_session {session, task_id?, stage?}` / CLI `pathloom session set --client C --id I [--url] [--title] --state S (--task ID | --stage K)`: upsert у `sessions` етапу, запис у журнал лише коли значення `state` змінилося. Будь-який мутаційний виклик із `session`, що має `state`, теж оновлює його. Capability `session_state`.
 - **Етап**: frontmatter `sessions: [ ... ]` (необов'язково; історія сесій, що працювали над етапом, найновіші останніми, максимум 20 — старі відкидаються). Через `apply`: `stages[].sessions_add: [ ... ]` (дедуп за `client`+`id`).
 - **Claim**: `claim_task {task_id, session?}` — `Claim.session: Option<SessionRef>`; при claim з сесією вона також додається в `sessions` етапу.
 - **Журнал**: `LogEntry.session: Option<SessionRef>`. MCP може приймати сесію в будь-якому мутаційному виклику через необов'язковий аргумент `session`.

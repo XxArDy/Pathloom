@@ -101,6 +101,7 @@ impl Project {
             git: None,
             telegram: None,
             require_approval: false,
+            allow_client_answers: false,
         };
         let text = toml::to_string(&config).map_err(|e| parse_err(&cfg_path, e))?;
         write_atomic(&cfg_path, text.as_bytes())?;
@@ -127,6 +128,11 @@ impl Project {
     /// Whether agents cannot close tasks themselves (they go to review); saves `.pathloom/project.toml`.
     pub fn set_require_approval(&mut self, on: bool) -> Result<()> {
         self.update_config(|c| c.require_approval = on)
+    }
+
+    /// Whether MCP clients may relay a human's answers; saves `.pathloom/project.toml`.
+    pub fn set_allow_client_answers(&mut self, on: bool) -> Result<()> {
+        self.update_config(|c| c.allow_client_answers = on)
     }
 
     fn update_config(&mut self, f: impl FnOnce(&mut ProjectConfig)) -> Result<()> {

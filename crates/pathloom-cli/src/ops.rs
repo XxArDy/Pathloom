@@ -50,6 +50,10 @@ impl From<Error> for ApiError {
             | Error::InvalidSpec(_)
             | Error::Parse { .. }
             | Error::AlreadyInitialized(_) => ("INVALID_SPEC", Value::Null),
+            Error::AlreadyDecided { what, by, at, value, .. } => {
+                let k = if *what == "decision" { "choice" } else { "state" };
+                ("ALREADY_DECIDED", json!({"by": by, "at": at, k: value}))
+            }
             Error::Io(_) => ("IO_ERROR", Value::Null),
             Error::Git(_) => ("GIT_ERROR", Value::Null),
         };
@@ -426,6 +430,58 @@ pub fn answer_decision(p: &Project, a: &Actor, task_id: &str, choice: &str) -> A
     Ok(task_log(p, a, "decision answer", format!("{task_id} decided: {}", choice.trim().chars().take(60).collect::<String>()), &s, task_id, v))
 }
 
+/// Refuse unless the project lets clients relay human answers; returns the author `<agent>:<human>`.
+fn client_author(p: &Project, a: &Actor, human: &str) -> ApiResult<String> {
+    if !p.config.allow_client_answers {
+        return Err(ApiError::new("FORBIDDEN", "client answers are off: set `allow_client_answers = true` in .pathloom/project.toml (the owner decides in the app)"));
+    }
+    let human = human.trim();
+    if !(1..=64).contains(&human.chars().count()) || human.chars().any(char::is_control) {
+        return Err(ApiError::new("INVALID_SPEC", "human must be 1-64 characters naming the person who answered"));
+    }
+    if human.eq_ignore_ascii_case(&a.name) || normalize_agent(human) == a.name {
+        return Err(ApiError::new("FORBIDDEN", "an agent cannot answer for itself: `human` must name the person who answered"));
+    }
+    Ok(format!("{}:{human}", a.name))
+}
+
+/// A client relays a human's approval or rejection (`respond_approval`); needs `allow_client_answers`.
+pub fn respond_approval(p: &Project, a: &Actor, task_id: &str, approve: bool, reasons: &[String], comment: Option<&str>, human: &str) -> ApiResult<Value> {
+    let by = client_author(p, a, human)?;
+    let s = p.decide_approval(task_id, approve, reasons, comment, &by)?;
+    let state = if approve { "approved" } else { "rejected" };
+    let v = json!({"state": state, "task_id": task_id, "by": by, "stage": brief(&s, p)?});
+    let action = if approve { "approval approve" } else { "approval reject" };
+    Ok(task_log(p, a, action, format!("{state} {task_id} (relayed, answered by {human})", human = human.trim()), &s, task_id, v))
+}
+
+/// A client relays a human's answer to a decision (`answer_decision`); needs `allow_client_answers`.
+pub fn answer_decision_for(p: &Project, a: &Actor, task_id: &str, choice: &str, human: &str) -> ApiResult<Value> {
+    let by = client_author(p, a, human)?;
+    let s = p.answer_decision(task_id, choice, &by)?;
+    let v = json!({"task_id": task_id, "choice": choice.trim(), "by": by, "stage": brief(&s, p)?});
+    Ok(task_log(p, a, "decision answer", format!("{task_id} decided (relayed, answered by {}): {}", human.trim(), choice.trim().chars().take(60).collect::<String>()), &s, task_id, v))
+}
+
+/// Publish the live state of a client session on a stage (m10 §Б1). Logs only when the state value changes.
+pub fn update_session(p: &Project, a: &Actor, task_id: Option<&str>, stage: Option<&str>) -> ApiResult<Value> {
+    let session = a.session.clone().ok_or_else(|| ApiError::new("INVALID_SPEC", "session is required"))?;
+    let key = match (task_id, stage) {
+        (Some(t), _) => stage_key(t),
+        (None, Some(k)) => k.to_string(),
+        (None, None) => return Err(ApiError::new("INVALID_SPEC", "give task_id or stage")),
+    };
+    let changed = p.update_session(&key, session.clone())?;
+    let v = json!({"stage": key, "session": session, "changed": changed});
+    if changed {
+        let what = session.state.map_or(String::new(), |s| serde_json::to_value(s).ok().and_then(|x| x.as_str().map(String::from)).unwrap_or_default());
+        let e = entry("update_session", format!("session {} is {what}", session.id), vec![key.clone()], task_id.map(String::from).into_iter().collect(), vec![stage_file(p, &key)]);
+        return Ok(log(p, a, e, v));
+    }
+    p.touch_claims(&a.name);
+    Ok(v)
+}
+
 pub fn decisions(p: &Project, open_only: bool) -> ApiResult<Value> {
     Ok(json!({"decisions": p.decisions(open_only)?}))
 }
@@ -559,6 +615,12 @@ pub fn log(p: &Project, a: &Actor, mut e: LogEntry, mut v: Value) -> Value {
     e.source = a.source.into();
     if e.session.is_none() {
         e.session.clone_from(&a.session);
+    }
+    if let Some(sess) = a.session.as_ref().filter(|s| s.state.is_some()) {
+        // Best effort, like the log: the action already succeeded.
+        for key in e.stages.iter().filter(|k| e.action != "update_session" && !k.is_empty()) {
+            let _ = p.update_session(key, sess.clone());
+        }
     }
     if let Err(err) = p.log_action(&e)
         && let Some(o) = v.as_object_mut()

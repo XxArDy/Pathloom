@@ -6,6 +6,11 @@
 
 ## Б. Оркестратори (лише публічний протокол)
 
+**Статус (2026-11-20):** Б1, Б2, Б3, Б5, Б8 зроблено в ядрі, CLI і MCP (без UI застосунку: колір стану на картці, «Відкрити сесію», тост «уже вирішено» — пізніше). Відхилення від тексту нижче:
+- Б1: `update_session` вимагає `task_id` або `stage` (інакше `INVALID_SPEC`); стан іншого виклику з `session` оновлює сесію в кожному етапі, який зачіпає запис журналу. `state_at` завжди ставить Pathloom.
+- Б2: `allow_client_answers` не має CLI-перемикача, лише рядок у `project.toml` (`Project::set_allow_client_answers` для застосунку). `ALREADY_DECIDED` повертають і CLI/MCP/Telegram; `details`: `{by, at, state}` для погодження і `{by, at, choice}` для рішення. Помилка ядра `Error::AlreadyDecided`; застосунок поки показує її текстом помилки. Погодження без запису `approval` власник і далі схвалює напряму.
+- Б8: `--stage` не фільтрує `claims`, `board`, `proposal`, `agents`, `hello`.
+
 **Б1. Живий стан сесії.** `SessionRef` отримує необов'язкові `state: working|waiting|blocked|error|done` і `state_at`. MCP `update_session {session, task_id?, stage?}` (upsert за `client`+`id`, оновлює `state`, додає в `sessions` етапу; без нового запису в журнал на кожну зміну стану, лише при зміні значення). Будь-який мутаційний виклик із `session` теж оновлює стан. Картка й інспектор: кольорова позначка стану + «Відкрити сесію» (`url`). Capability `session_state`.
 
 **Б2. Спільна черга погоджень.** Наявні `request_approval` / `ask_decision` — це і є `approval.request`. Нове:

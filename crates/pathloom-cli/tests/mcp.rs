@@ -278,7 +278,7 @@ fn project_info_protocol_capabilities_and_read_only() {
     let mut ro = Client::start(d.path(), &["--read-only"]);
     ro.handshake();
     let (_, v) = ro.call("project_info", json!({}));
-    assert_eq!(v["capabilities"], json!(["read", "activity", "events", "validate", "commits", "agenda", "digest"]));
+    assert_eq!(v["capabilities"], json!(["read", "activity", "events", "validate", "commits", "agenda", "digest", "approval_events", "task_events", "watch_filter"]));
     let (err, v) = ro.call("list_commits", json!({}));
     assert!(!err, "{v}");
     assert!(v["commits"].is_array());
@@ -484,4 +484,100 @@ fn delegation_status_and_usage_tools() {
     assert!(err);
     let (err, _) = c.call("report_usage", json!({"task_id": "A-99"}));
     assert!(err);
+}
+
+fn enable_client_answers(dir: &std::path::Path) {
+    pathloom_core::Project::open(dir).unwrap().set_allow_client_answers(true).unwrap();
+}
+
+#[test]
+fn update_session_tool_upserts_and_logs_on_change() {
+    let d = project();
+    let mut c = Client::start(d.path(), &[]);
+    c.handshake();
+    let spec = json!({"stages": [{"id": "A", "title": "Alpha", "tasks": ["one"]}]});
+    assert!(!c.call("apply", json!({"spec": spec})).0);
+    let s = |state: &str| json!({"session": {"client": "maestro", "id": "s1", "url": "maestro://s/1", "state": state}, "task_id": "A-01"});
+    let (err, v) = c.call("update_session", s("working"));
+    assert!(!err, "{v}");
+    assert_eq!(v["changed"], true);
+    assert_eq!(c.call("update_session", s("working")).1["changed"], false);
+    assert_eq!(c.call("update_session", s("blocked")).1["changed"], true);
+    let no_target = c.call("update_session", json!({"session": {"client": "maestro", "id": "s1"}}));
+    assert_eq!(no_target.1["code"], "INVALID_SPEC");
+    let (_, st) = c.call("get_stage", json!({"key": "A"}));
+    assert_eq!((st["sessions"][0]["state"].as_str(), st["sessions"][0]["url"].as_str()), (Some("blocked"), Some("maestro://s/1")));
+    let (_, log) = c.call("activity", json!({}));
+    assert_eq!(log["entries"].as_array().unwrap().iter().filter(|e| e["action"] == "update_session").count(), 2);
+
+    // any mutating call that carries a session with a state updates it too
+    let sess = json!({"client": "maestro", "id": "s1", "state": "done"});
+    assert!(!c.call("add_comment", json!({"stage": "A", "text": "hi", "session": sess})).0);
+    assert_eq!(c.call("get_stage", json!({"key": "A"})).1["sessions"][0]["state"], "done");
+
+    let mut r = Client::start(d.path(), &["--read-only"]);
+    r.handshake();
+    assert_eq!(r.call("update_session", s("working")).1["code"], "READ_ONLY");
+}
+
+#[test]
+fn client_answers_forbidden_then_allowed_and_first_wins() {
+    let d = project();
+    let mut c = Client::start(d.path(), &[]);
+    c.handshake();
+    let spec = json!({"stages": [{"id": "APPR", "title": "Approvals", "tasks": ["Icon", "Logo"]}, {"id": "DECIDE", "title": "Decisions", "tasks": ["DB"]}]});
+    assert!(!c.call("apply", json!({"spec": spec})).0);
+    assert!(!c.call("request_approval", json!({"task_id": "APPR-01"})).0);
+    assert!(!c.call("request_approval", json!({"task_id": "APPR-02"})).0);
+    let q = json!({"task_id": "DECIDE-01", "question": "Which DB?", "options": [{"label": "SQLite"}, {"label": "Postgres"}]});
+    assert!(!c.call("ask_decision", q).0);
+
+    // off by default
+    let (err, v) = c.call("respond_approval", json!({"task_id": "APPR-01", "approve": true, "human": "alice"}));
+    assert!(err);
+    assert_eq!(v["code"], "FORBIDDEN");
+    assert_eq!(c.call("answer_decision", json!({"task_id": "DECIDE-01", "choice": "SQLite", "human": "alice"})).1["code"], "FORBIDDEN");
+
+    enable_client_answers(d.path());
+    // `human` is required, 1-64 chars and not the agent itself
+    for human in ["", "   ", "test-client", "Test-Client"] {
+        let (err, v) = c.call("respond_approval", json!({"task_id": "APPR-01", "approve": true, "human": human}));
+        assert!(err, "{human:?}: {v}");
+    }
+    assert!(c.call("respond_approval", json!({"task_id": "APPR-01", "approve": true, "human": "x".repeat(65)})).0);
+    assert!(c.call("respond_approval", json!({"task_id": "APPR-01", "approve": true})).0);
+
+    let (err, v) = c.call("respond_approval", json!({"task_id": "APPR-01", "approve": true, "human": "alice"}));
+    assert!(!err, "{v}");
+    assert_eq!((v["state"].as_str(), v["by"].as_str()), (Some("approved"), Some("test-client:alice")));
+    let (_, a) = c.call("get_approvals", json!({"state": "approved"}));
+    assert_eq!(a["approvals"][0]["by"], "test-client:alice");
+
+    // first answer wins
+    let (err, v) = c.call("respond_approval", json!({"task_id": "APPR-01", "approve": false, "human": "bob"}));
+    assert!(err);
+    let by = v["details"]["by"].as_str();
+    assert_eq!((v["code"].as_str(), by, v["details"]["state"].as_str()), (Some("ALREADY_DECIDED"), Some("test-client:alice"), Some("approved")));
+
+    // rejection relayed
+    let rej = json!({"task_id": "APPR-02", "approve": false, "reasons": ["quality"], "comment": "Redo", "human": "bob"});
+    let (err, v) = c.call("respond_approval", rej);
+    assert!(!err, "{v}");
+    assert_eq!(c.call("get_approvals", json!({"state": "rejected"})).1["approvals"][0]["comment"], "Redo");
+
+    let (err, v) = c.call("answer_decision", json!({"task_id": "DECIDE-01", "choice": "SQLite", "human": "alice"}));
+    assert!(!err, "{v}");
+    assert_eq!(c.call("list_decisions", json!({})).1["decisions"][0]["by"], "test-client:alice");
+    let (err, v) = c.call("answer_decision", json!({"task_id": "DECIDE-01", "choice": "Postgres", "human": "bob"}));
+    assert!(err);
+    assert_eq!((v["code"].as_str(), v["details"]["choice"].as_str()), (Some("ALREADY_DECIDED"), Some("SQLite")));
+
+    // an answer given in the CLI first also wins
+    cli(d.path(), &["approval", "request", "APPR-02"]);
+    cli(d.path(), &["approval", "approve", "APPR-02"]);
+    assert_eq!(c.call("respond_approval", json!({"task_id": "APPR-02", "approve": false, "human": "alice"})).1["code"], "ALREADY_DECIDED");
+
+    let mut r = Client::start(d.path(), &["--read-only"]);
+    r.handshake();
+    assert_eq!(r.call("answer_decision", json!({"task_id": "DECIDE-01", "choice": "x", "human": "alice"})).1["code"], "READ_ONLY");
 }

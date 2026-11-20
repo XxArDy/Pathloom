@@ -24,6 +24,9 @@ pub struct Evidence {
     /// Commit the check ran on (7-40 hex).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commit: Option<String>,
+    /// Git branch the check ran on (up to 200 chars, one line).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
     /// When it was attached (RFC3339 UTC). Set by Pathloom.
     #[serde(default)]
     pub at: String,
@@ -51,6 +54,7 @@ impl Evidence {
             summary: opt(self.summary),
             log: opt(self.log),
             commit: opt(self.commit).map(|c| crate::taskstatus::check_sha(&c)).transpose()?,
+            branch: opt(self.branch),
             at: self.at.trim().to_string(),
             by: self.by.trim().to_string(),
         };
@@ -59,6 +63,9 @@ impl Evidence {
         }
         if e.summary.as_ref().is_some_and(|s| s.chars().count() > 120) {
             return Err(bad("evidence summary must be at most 120 characters"));
+        }
+        if e.branch.as_ref().is_some_and(|b| b.chars().count() > 200 || b.chars().any(char::is_control)) {
+            return Err(bad("evidence branch must be at most 200 characters, no control characters"));
         }
         if let Some(l) = &e.log {
             let lower = l.to_ascii_lowercase();
@@ -80,7 +87,7 @@ mod tests {
     use super::*;
 
     fn ev(cmd: &str, code: i32) -> Evidence {
-        Evidence { command: cmd.into(), exit_code: code, duration_ms: None, summary: None, log: None, commit: None, at: String::new(), by: String::new() }
+        Evidence { command: cmd.into(), exit_code: code, duration_ms: None, summary: None, log: None, commit: None, branch: None, at: String::new(), by: String::new() }
     }
 
     #[test]
@@ -95,5 +102,10 @@ mod tests {
         let c = Evidence { commit: Some(" ABCDEF1 ".into()), ..ev("x", 0) }.normalize().unwrap();
         assert_eq!(c.commit.as_deref(), Some("abcdef1"));
         assert!(Evidence { summary: Some("y".repeat(121)), ..ev("x", 0) }.normalize().is_err());
+        let b = Evidence { branch: Some(" feat/x ".into()), ..ev("x", 0) }.normalize().unwrap();
+        assert_eq!(b.branch.as_deref(), Some("feat/x"));
+        assert!(Evidence { branch: Some("b".repeat(201)), ..ev("x", 0) }.normalize().is_err());
+        assert!(Evidence { branch: Some(format!("a{}b", char::from(7u8))), ..ev("x", 0) }.normalize().is_err());
+        assert_eq!(Evidence { branch: Some("  ".into()), ..ev("x", 0) }.normalize().unwrap().branch, None);
     }
 }
