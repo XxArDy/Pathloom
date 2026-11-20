@@ -95,6 +95,19 @@ With `agent_changes = "review"` in `.pathloom/project.toml`, commands that chang
 a human accepts it (`pathloom proposals accept <id>` or in the app). `--direct` bypasses review.
 `task done/undo` and `comment` always write directly.
 
+## Plan templates
+
+Built-in: `product-launch`, `book`, `renovation`, `course` (`en`, `uk`; apply specs in `crates/pathloom-core/templates/`). Your own live in `~/.pathloom/templates/<name>.json` (override the folder with `PATHLOOM_TEMPLATES_DIR`).
+
+```
+pathloom init --template book --lang uk      # new project from a template
+pathloom template list [--json]
+pathloom template apply course [--lang en]   # adds stages with fresh keys, lays out the board
+pathloom template save my-plan [--title T]   # name: [a-z0-9-]{1,40}
+```
+
+A saved template keeps stages, descriptions, tasks (all undone), dependencies, kind/who/priority and frames; it drops the log, claims, evidence, notes, sessions, comments and dates. MCP: `list_templates`, `apply_template {id, lang?}` (review mode stores a proposal), `init_project {template?, lang?}`; capability `templates`.
+
 ## Telegram approvals
 
 `pathloom telegram` sends every pending approval (image previews plus a message with ✅ / ❌ buttons) to a Telegram chat and

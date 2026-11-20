@@ -5,9 +5,10 @@ mod mcp;
 mod ops;
 mod schema;
 mod telegram;
+mod tpl;
 
 use clap::Parser;
-use cli::{AgentCmd, ApprovalCmd, BoardCmd, DecisionCmd, Cli, Cmd, GateCmd, ProposalCmd, SkillCmd, StageCmd, TaskCmd};
+use cli::{AgentCmd, ApprovalCmd, BoardCmd, DecisionCmd, Cli, Cmd, GateCmd, ProposalCmd, SkillCmd, StageCmd, TaskCmd, TemplateCmd};
 use ops::{ApiError, ApiResult};
 use pathloom_core::events::{Event, EventWatcher};
 use pathloom_core::{ApplySpec, DepSpec, Place, Project, SessionRef, StageSpec};
@@ -137,11 +138,17 @@ fn read_spec_text(file: &str) -> ApiResult<String> {
     }
 }
 
+/// `uk` when the locale env says Ukrainian (titles in `template list`).
+fn lang_hint() -> Option<String> {
+    let l = std::env::var("LC_ALL").or_else(|_| std::env::var("LANG")).unwrap_or_default();
+    l.starts_with("uk").then(|| "uk".into())
+}
+
 #[allow(clippy::too_many_lines)]
 fn run(cli: &Cli) -> ApiResult<ExitCode> {
     let actor = ops::Actor::new(&cli.author, "cli");
     match &cli.command {
-        Cmd::Init { plan_dir, name, agents_skill } => {
+        Cmd::Init { plan_dir, name, agents_skill, template, lang } => {
             let root = match &cli.project {
                 Some(p) => std::path::absolute(p),
                 None => std::env::current_dir(),
@@ -150,13 +157,38 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
             let name = name.clone().unwrap_or_else(|| {
                 root.file_name().map_or_else(|| "project".into(), |n| n.to_string_lossy().into_owned())
             });
+            if let Some(t) = template {
+                tpl::check(t, lang.as_deref())?;
+            }
             let p = Project::init_with(&root, &name, plan_dir)?;
             let mut j = json!({"name": name, "root": p.root.to_string_lossy(), "plan_dir": plan_dir});
+            if let Some(t) = template {
+                j["template"] = tpl::apply(&p, t, lang.as_deref(), true)?["report"].clone();
+            }
             if *agents_skill {
                 let path = ops::install_skill(&p.root, std::path::Path::new(".agents/skills"), false)?;
                 j["skill"] = json!(path.to_string_lossy());
             }
             emit(cli, &j, || format!("Initialized Pathloom project `{name}` in {}", p.root.display()));
+        }
+        Cmd::Template(c) => {
+            let (j, human) = match c {
+                TemplateCmd::List => {
+                    let j = tpl::list(lang_hint().as_deref());
+                    let lines = j["templates"].as_array().map(|a| {
+                        a.iter().map(|t| format!("{}{}	{}", t["id"].as_str().unwrap_or(""), if t["builtin"] == true { "" } else { " (yours)" }, t["title"].as_str().unwrap_or(""))).collect::<Vec<_>>().join("
+")
+                    });
+                    (j, lines.unwrap_or_default())
+                }
+                TemplateCmd::Save { name, title } => (tpl::save(&open(cli)?, name, title.as_deref())?, format!("Saved template {name}")),
+                TemplateCmd::Apply { id, lang } => {
+                    let j = tpl::apply(&open(cli)?, id, lang.as_deref(), true)?;
+                    let n = j["report"]["created"].as_array().map_or(0, Vec::len);
+                    (j, format!("Applied template {id}: {n} stages"))
+                }
+            };
+            emit(cli, &j, || human);
         }
         Cmd::Board(BoardCmd::Create { name, title }) => {
             let p = open(cli)?;

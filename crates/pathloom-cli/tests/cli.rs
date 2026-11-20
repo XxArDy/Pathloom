@@ -374,6 +374,35 @@ fn init_agents_skill() {
     assert!(d.path().join(".agents/skills/pathloom/SKILL.md").is_file());
 }
 
+#[test]
+fn init_template_and_user_templates() {
+    let d = tempfile::tempdir().unwrap();
+    let tdir = tempfile::tempdir().unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_pathloom"))
+            .env("PATHLOOM_TEMPLATES_DIR", tdir.path())
+            .arg("--project")
+            .arg(d.path())
+            .arg("--json")
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    assert!(!run(&["init", "--template", "nope"]).status.success());
+    assert!(!d.path().join(".pathloom").exists());
+    let o = run(&["init", "--template", "book", "--lang", "uk"]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let n = |o: &Output| serde_json::from_slice::<Value>(&o.stdout).unwrap();
+    assert_eq!(run(&["validate"]).status.code(), Some(0));
+    assert!(run(&["template", "save", "mine", "--title", "Mine"]).status.success());
+    assert!(!run(&["template", "save", "Bad Name"]).status.success());
+    let l = n(&run(&["template", "list"]));
+    let ids: Vec<&str> = l["templates"].as_array().unwrap().iter().map(|t| t["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, ["product-launch", "book", "renovation", "course", "mine"]);
+    let a = n(&run(&["template", "apply", "mine"]));
+    assert_eq!(a["report"]["created"].as_array().unwrap().len(), 8);
+}
+
 /// Spawn `pathloom watch --json`, return the child and a channel of its stdout lines.
 fn spawn_watch(p: &Proj, extra: &[&str]) -> (std::process::Child, std::sync::mpsc::Receiver<String>) {
     use std::io::BufRead;

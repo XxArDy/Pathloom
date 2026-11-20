@@ -1,0 +1,150 @@
+{
+  "stages": [
+    {
+      "id": "CONCEPT",
+      "title": "Concept and audience",
+      "description": "Decide what the book is about, who reads it and what they get from it.",
+      "who": "me",
+      "tasks": [
+        "Write the premise in three sentences",
+        "Describe the ideal reader",
+        "Find 3 comparable books and note what yours does differently",
+        "Set the target length and writing schedule"
+      ]
+    },
+    {
+      "id": "OUTLINE",
+      "title": "Outline and structure",
+      "description": "A chapter-by-chapter map you can write against.",
+      "who": "both",
+      "depends": [
+        "CONCEPT"
+      ],
+      "tasks": [
+        "List the main parts and chapters",
+        "Write a one-paragraph summary per chapter",
+        "Check the order for gaps and repetition",
+        "Settle the tone and point of view"
+      ]
+    },
+    {
+      "id": "RESEARCH",
+      "title": "Research and sources",
+      "description": "Collect the facts, quotes and references the chapters rely on.",
+      "who": "ai",
+      "depends": [
+        "CONCEPT"
+      ],
+      "tasks": [
+        "Gather key sources per chapter",
+        "Verify facts, names and dates",
+        "Request permissions for quotes where needed",
+        "Keep a notes file linked to chapters"
+      ]
+    },
+    {
+      "id": "DRAFT",
+      "title": "First draft",
+      "description": "Get the whole story down without polishing.",
+      "who": "me",
+      "depends": [
+        "OUTLINE",
+        "RESEARCH"
+      ],
+      "tasks": [
+        "Write chapters 1 to 3",
+        "Write the middle chapters",
+        "Write the final chapters",
+        "Reach the end without editing as you go"
+      ]
+    },
+    {
+      "id": "REVISE",
+      "title": "Structural revision",
+      "description": "Fix the shape of the book: order, pacing, missing and weak chapters.",
+      "who": "both",
+      "depends": [
+        "DRAFT"
+      ],
+      "tasks": [
+        "Read the whole draft in one go",
+        "Cut or merge weak chapters",
+        "Rewrite the opening and ending",
+        "Collect feedback from 2-3 beta readers",
+        "Apply the feedback that matters"
+      ]
+    },
+    {
+      "id": "EDIT",
+      "title": "Line editing and proofreading",
+      "description": "Sentence-level polish and a clean text.",
+      "who": "both",
+      "depends": [
+        "REVISE"
+      ],
+      "tasks": [
+        "Line edit for clarity and rhythm",
+        "Check consistency of names and terms",
+        "Proofread for typos and punctuation",
+        "Final read-aloud pass"
+      ]
+    },
+    {
+      "id": "DESIGN",
+      "title": "Cover and layout",
+      "description": "How the book looks and is built as a file.",
+      "who": "both",
+      "depends": [
+        "EDIT"
+      ],
+      "tasks": [
+        "Brief and choose the cover design",
+        "Typeset the interior",
+        "Write the blurb and author bio",
+        "Prepare ISBN and metadata",
+        "Export print and e-book files"
+      ]
+    },
+    {
+      "id": "PUBLISH",
+      "title": "Publish",
+      "description": "The book is out and readers can find it.",
+      "kind": "milestone",
+      "who": "me",
+      "depends": [
+        "DESIGN"
+      ],
+      "tasks": [
+        "Upload files to the publishing platform",
+        "Order and check a proof copy",
+        "Set price and release date",
+        "Announce to friends, readers and communities"
+      ]
+    }
+  ],
+  "frames": [
+    {
+      "name": "Plan",
+      "members": [
+        "CONCEPT",
+        "OUTLINE",
+        "RESEARCH"
+      ]
+    },
+    {
+      "name": "Write and revise",
+      "members": [
+        "DRAFT",
+        "REVISE",
+        "EDIT"
+      ]
+    },
+    {
+      "name": "Produce",
+      "members": [
+        "DESIGN",
+        "PUBLISH"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,150 @@
+{
+  "stages": [
+    {
+      "id": "AUDIENCE",
+      "title": "Audience and outcomes",
+      "description": "Who the course is for and what they can do after it.",
+      "who": "me",
+      "tasks": [
+        "Describe the ideal learner and their starting level",
+        "Write 3-5 concrete learning outcomes",
+        "Check what similar courses already cover",
+        "Decide format, length and price range"
+      ]
+    },
+    {
+      "id": "SYLLABUS",
+      "title": "Syllabus and lesson plan",
+      "description": "The module and lesson structure that leads to the outcomes.",
+      "who": "both",
+      "depends": [
+        "AUDIENCE"
+      ],
+      "tasks": [
+        "Break outcomes into modules",
+        "List lessons with a goal for each",
+        "Order lessons from simple to hard",
+        "Estimate time per lesson"
+      ]
+    },
+    {
+      "id": "LESSONS",
+      "title": "Create lessons",
+      "description": "Record or write the actual teaching content.",
+      "who": "both",
+      "depends": [
+        "SYLLABUS"
+      ],
+      "tasks": [
+        "Write scripts or slides for module 1",
+        "Record or write module 1",
+        "Create the remaining modules",
+        "Add examples and downloadable materials",
+        "Review all lessons for consistency"
+      ]
+    },
+    {
+      "id": "PRACTICE",
+      "title": "Exercises and assessments",
+      "description": "Practice that proves the outcomes were reached.",
+      "who": "both",
+      "depends": [
+        "SYLLABUS"
+      ],
+      "tasks": [
+        "Design an exercise per module",
+        "Write quizzes with answers",
+        "Prepare a final project",
+        "Write a grading or self-check guide"
+      ]
+    },
+    {
+      "id": "PLATFORM",
+      "title": "Platform and course page",
+      "description": "Where learners find, buy and take the course.",
+      "who": "both",
+      "depends": [
+        "SYLLABUS"
+      ],
+      "tasks": [
+        "Choose the hosting platform",
+        "Set up the course structure and payments",
+        "Write the course page and syllabus summary",
+        "Prepare welcome and support messages"
+      ]
+    },
+    {
+      "id": "PILOT",
+      "title": "Pilot with first learners",
+      "description": "Run the course with a small group before opening it to everyone.",
+      "who": "me",
+      "depends": [
+        "LESSONS",
+        "PRACTICE",
+        "PLATFORM"
+      ],
+      "tasks": [
+        "Invite 5-10 pilot learners",
+        "Collect feedback after each module",
+        "Track where learners get stuck",
+        "Ask for testimonials"
+      ]
+    },
+    {
+      "id": "IMPROVE",
+      "title": "Improve from feedback",
+      "description": "Fix what the pilot showed.",
+      "who": "both",
+      "depends": [
+        "PILOT"
+      ],
+      "tasks": [
+        "List the issues by importance",
+        "Rework unclear lessons",
+        "Fix exercises and quizzes",
+        "Update the course page with results"
+      ]
+    },
+    {
+      "id": "OPEN",
+      "title": "Open enrollment",
+      "description": "The course is available to everyone.",
+      "kind": "milestone",
+      "who": "me",
+      "depends": [
+        "IMPROVE"
+      ],
+      "tasks": [
+        "Announce to your audience",
+        "Set up a support channel",
+        "Monitor first-week questions",
+        "Plan the next update"
+      ]
+    }
+  ],
+  "frames": [
+    {
+      "name": "Design",
+      "members": [
+        "AUDIENCE",
+        "SYLLABUS"
+      ]
+    },
+    {
+      "name": "Build",
+      "members": [
+        "LESSONS",
+        "PRACTICE",
+        "PLATFORM"
+      ]
+    },
+    {
+      "name": "Test and open",
+      "members": [
+        "PILOT",
+        "IMPROVE",
+        "OPEN"
+      ]
+    }
+  ]
+}

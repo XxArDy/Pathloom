@@ -113,6 +113,10 @@ comments: [{stage: AUTH, text: "Started with OAuth"}]
 expected: {M0: "<hash from get_stage>"}
 ```
 
+## Templates
+
+For a new kind of project, start from a template instead of an empty plan: `list_templates`, then `apply_template {id, lang?}` (or `init_project {template}`). Built-in: `product-launch`, `book`, `renovation`, `course`. Stages get new keys, so applying never overwrites existing stages; adapt the result with `apply` afterwards. In review mode the template becomes a proposal.
+
 ## Rules
 - **Never delete or rewrite stages you did not create** and never clear their tasks. There is no delete in `apply` on purpose.
 - Do not invent task IDs: add tasks by title and read the IDs back with `get_stage`.

@@ -1,0 +1,146 @@
+{
+  "stages": [
+    {
+      "id": "POSITION",
+      "title": "Define audience and positioning",
+      "description": "Decide who the product is for and why they should care, before any launch material is written.",
+      "who": "me",
+      "tasks": [
+        "Interview 5-10 people from the target audience",
+        "Write a one-sentence value proposition",
+        "List the top 3 alternatives and how we differ",
+        "Pick one launch goal and its success metric"
+      ]
+    },
+    {
+      "id": "PRODUCT",
+      "title": "Finalize the product",
+      "description": "Freeze the scope that ships on launch day and make sure it works end to end.",
+      "who": "both",
+      "depends": [
+        "POSITION"
+      ],
+      "tasks": [
+        "Freeze the launch scope",
+        "Fix blocking bugs",
+        "Set up pricing and checkout",
+        "Polish the first-run onboarding",
+        "Add analytics for the key events"
+      ]
+    },
+    {
+      "id": "SITE",
+      "title": "Landing page and docs",
+      "description": "The place every launch link points to: one page that explains, convinces and collects signups.",
+      "who": "both",
+      "depends": [
+        "POSITION"
+      ],
+      "tasks": [
+        "Draft landing page copy",
+        "Build and deploy the landing page",
+        "Write quick-start documentation",
+        "Add a signup or waitlist form",
+        "Check mobile layout and page speed"
+      ]
+    },
+    {
+      "id": "ASSETS",
+      "title": "Launch assets",
+      "description": "Everything that is published on launch day, prepared in advance.",
+      "who": "both",
+      "depends": [
+        "SITE"
+      ],
+      "tasks": [
+        "Record screenshots and a short demo video",
+        "Write the announcement post",
+        "Prepare social media posts",
+        "Assemble a press kit",
+        "Draft the launch email"
+      ]
+    },
+    {
+      "id": "BETA",
+      "title": "Closed beta",
+      "description": "Let a small group use the product for real and fix what hurts most.",
+      "who": "me",
+      "depends": [
+        "PRODUCT",
+        "SITE"
+      ],
+      "tasks": [
+        "Invite 20 early users",
+        "Collect feedback in one place",
+        "Triage and fix the top issues",
+        "Ask happy users for testimonials"
+      ]
+    },
+    {
+      "id": "OUTREACH",
+      "title": "Outreach and communities",
+      "description": "Line up the people and places that will see the launch.",
+      "who": "me",
+      "depends": [
+        "ASSETS"
+      ],
+      "tasks": [
+        "Pick 5 communities and channels to post in",
+        "Contact newsletters and creators",
+        "Schedule the posts",
+        "Ask supporters to be ready on launch day"
+      ]
+    },
+    {
+      "id": "READY",
+      "title": "Launch readiness check",
+      "description": "Last look before going public: nothing should surprise you on launch day.",
+      "who": "me",
+      "depends": [
+        "BETA",
+        "OUTREACH"
+      ],
+      "tasks": [
+        "Test the full path from signup to payment",
+        "Check the support inbox and FAQ",
+        "Confirm monitoring and backups work",
+        "Agree on the launch-day schedule"
+      ]
+    },
+    {
+      "id": "LAUNCH",
+      "title": "Launch",
+      "description": "Go public and stay close to the first users.",
+      "kind": "milestone",
+      "who": "me",
+      "depends": [
+        "READY"
+      ],
+      "tasks": [
+        "Publish the announcement",
+        "Send the launch email",
+        "Answer comments and support requests all day",
+        "Review first-day metrics"
+      ]
+    }
+  ],
+  "frames": [
+    {
+      "name": "Prepare",
+      "members": [
+        "POSITION",
+        "PRODUCT",
+        "SITE",
+        "ASSETS"
+      ]
+    },
+    {
+      "name": "Validate and reach",
+      "members": [
+        "BETA",
+        "OUTREACH",
+        "READY"
+      ]
+    }
+  ]
+}

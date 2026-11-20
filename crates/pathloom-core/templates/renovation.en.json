@@ -1,0 +1,146 @@
+{
+  "stages": [
+    {
+      "id": "GOALS",
+      "title": "Goals and budget",
+      "description": "Decide what must change, what it may cost and what can wait.",
+      "who": "me",
+      "tasks": [
+        "List what must change and what is optional",
+        "Set the total budget and a reserve of 10-15%",
+        "Set the desired finish date",
+        "Collect inspiration photos"
+      ]
+    },
+    {
+      "id": "DESIGN",
+      "title": "Design and measurements",
+      "description": "Measured plans so everyone quotes the same work.",
+      "who": "both",
+      "depends": [
+        "GOALS"
+      ],
+      "tasks": [
+        "Measure every room",
+        "Draw the new layout",
+        "Plan electrics, plumbing and lighting",
+        "Choose the style and main materials",
+        "Make a room-by-room work list"
+      ]
+    },
+    {
+      "id": "PERMITS",
+      "title": "Permits and approvals",
+      "description": "Anything that needs official or building-management consent.",
+      "who": "me",
+      "depends": [
+        "DESIGN"
+      ],
+      "tasks": [
+        "Check which changes need a permit",
+        "Submit the documents",
+        "Notify neighbors and building management"
+      ]
+    },
+    {
+      "id": "CONTRACT",
+      "title": "Choose contractors",
+      "description": "Get comparable quotes and sign clear agreements.",
+      "who": "me",
+      "depends": [
+        "DESIGN"
+      ],
+      "tasks": [
+        "Ask 3 contractors for quotes",
+        "Check references and past work",
+        "Compare quotes line by line",
+        "Sign a contract with scope, price and schedule"
+      ]
+    },
+    {
+      "id": "ORDER",
+      "title": "Order materials and furniture",
+      "description": "Long lead items first, so work never waits for a delivery.",
+      "who": "both",
+      "depends": [
+        "DESIGN",
+        "CONTRACT"
+      ],
+      "tasks": [
+        "List items with long delivery times",
+        "Order tiles, flooring and paint",
+        "Order windows, doors and fixtures",
+        "Arrange storage for deliveries"
+      ]
+    },
+    {
+      "id": "ROUGH",
+      "title": "Demolition and rough work",
+      "description": "Remove the old and build the hidden layers.",
+      "who": "both",
+      "depends": [
+        "PERMITS",
+        "CONTRACT"
+      ],
+      "tasks": [
+        "Protect and empty the rooms",
+        "Demolish and remove waste",
+        "Do electrics and plumbing",
+        "Level walls and floors",
+        "Inspect the hidden work before covering it"
+      ]
+    },
+    {
+      "id": "FINISH",
+      "title": "Finishing work",
+      "description": "Everything you will see and touch.",
+      "who": "both",
+      "depends": [
+        "ROUGH",
+        "ORDER"
+      ],
+      "tasks": [
+        "Paint and wallpaper",
+        "Lay flooring and tiles",
+        "Install doors, fixtures and lighting",
+        "Assemble furniture and kitchen"
+      ]
+    },
+    {
+      "id": "HANDOVER",
+      "title": "Final check and move in",
+      "description": "The work is accepted and the home is usable.",
+      "kind": "milestone",
+      "who": "me",
+      "depends": [
+        "FINISH"
+      ],
+      "tasks": [
+        "Walk through with a snag list",
+        "Get defects fixed before final payment",
+        "Deep clean",
+        "Move in and keep contracts and warranties"
+      ]
+    }
+  ],
+  "frames": [
+    {
+      "name": "Preparation",
+      "members": [
+        "GOALS",
+        "DESIGN",
+        "PERMITS",
+        "CONTRACT"
+      ]
+    },
+    {
+      "name": "Works",
+      "members": [
+        "ORDER",
+        "ROUGH",
+        "FINISH",
+        "HANDOVER"
+      ]
+    }
+  ]
+}

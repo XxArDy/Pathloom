@@ -12,7 +12,7 @@ pub fn capabilities(read_only: bool) -> Vec<&'static str> {
             "read", "apply", "proposals", "claims", "activity", "agents", "events", "sessions", "layout", "validate",
             "evidence", "heartbeat", "import", "artifacts", "usage", "gates",
             "propose", "approvals", "review", "decisions", "inbox",
-            "delegation", "task_status", "evidence_commit", "commits", "usage_tasks", "usage_quota",
+            "templates", "delegation", "task_status", "evidence_commit", "commits", "usage_tasks", "usage_quota",
         ]
     }
 }
@@ -26,10 +26,10 @@ mod tests {
         let rw = capabilities(false);
         let ro = capabilities(true);
         assert!(ro.iter().all(|c| rw.contains(c)));
-        for mutating in ["apply", "proposals", "claims", "agents", "sessions", "layout", "evidence", "heartbeat", "import", "usage", "gates", "propose", "approvals", "review", "decisions", "inbox"] {
+        for mutating in ["templates", "apply", "proposals", "claims", "agents", "sessions", "layout", "evidence", "heartbeat", "import", "usage", "gates", "propose", "approvals", "review", "decisions", "inbox"] {
             assert!(rw.contains(&mutating) && !ro.contains(&mutating), "{mutating}");
         }
-        for c in ["delegation", "task_status", "evidence_commit", "usage_tasks", "usage_quota"] {            assert!(rw.contains(&c) && !ro.contains(&c), "{c}");
+        for c in ["templates", "delegation", "task_status", "evidence_commit", "usage_tasks", "usage_quota"] {            assert!(rw.contains(&c) && !ro.contains(&c), "{c}");
         }
         assert!(ro.contains(&"commits"));
         assert_eq!(PROTOCOL, "pathloom/1");
