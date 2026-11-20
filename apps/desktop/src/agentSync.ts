@@ -46,6 +46,14 @@ export function ghostsFor(p: Proposal, activeBoard: string | null, real: StageVi
   });
 }
 
+export async function refreshInbox(): Promise<void> {
+  try {
+    useApp.getState().set({ inbox: await api.inboxList() });
+  } catch {
+    useApp.getState().set({ inbox: [] });
+  }
+}
+
 export async function refreshProposals(): Promise<void> {
   const st = useApp.getState();
   try {
@@ -86,6 +94,7 @@ async function onPlanChanged(ev: PlanChanged): Promise<void> {
       at: Date.now(),
     } });
   }
+  if (ev.stages.length) await refreshInbox();
   if (ev.proposals) await refreshProposals();
 }
 
@@ -113,6 +122,7 @@ export async function startAgentSync(): Promise<() => void> {
     if (useApp.getState().stages.some((s) => (s.claims ?? []).length)) void refreshAgents();
   }, 60_000);
   await refreshProposals();
+  await refreshInbox();
   await refreshAgents();
   return () => { un(); un2(); window.clearInterval(tick); };
 }

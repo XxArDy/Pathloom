@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { AgentProfile, Board, Editor, StageView, Tool } from '@pathloom/canvas';
 import { api, errorText, type ProjectSnapshot } from './api';
 import type { Proposal } from './agentSync';
+import type { InboxItem } from './api';
 import type { LogEntry } from './agents';
 import { parseCustomTheme, type AppTheme, type ThemeId } from './theme';
 
@@ -40,6 +41,8 @@ interface AppStore {
   settingsTab: 'general' | 'keys' | 'agents' | null;
   proposals: Proposal[];
   proposalsOpen: boolean;
+  inbox: InboxItem[];
+  inboxOpen: boolean;
   activity: LogEntry[];
   agents: AgentProfile[];
   agentChange: { group: number; stages: string[]; boards: string[]; at: number } | null;
@@ -122,6 +125,8 @@ export const useApp = create<AppStore>((set, get) => ({
   settingsTab: null,
   proposals: [],
   proposalsOpen: false,
+  inbox: [],
+  inboxOpen: false,
   activity: [],
   agents: [],
   agentChange: null,
@@ -136,7 +141,7 @@ export const useApp = create<AppStore>((set, get) => ({
 
   async enterProject(snap) {
     await get().flushSave();
-    set({ project: snap, boards: snap.boards, stages: snap.stages, openBoards: [], activeBoard: null, board: null, selectedStage: null, view: 'board', exec: false, proposals: [], proposalsOpen: false, agentChange: null, boardConflict: false });
+    set({ project: snap, boards: snap.boards, stages: snap.stages, openBoards: [], activeBoard: null, board: null, selectedStage: null, view: 'board', exec: false, proposals: [], proposalsOpen: false, inbox: [], inboxOpen: false, agentChange: null, boardConflict: false });
     api.themesList()
       .then((raw) => set({ customThemes: raw.map(parseCustomTheme).filter((t): t is AppTheme => t !== null) }))
       .catch(() => set({ customThemes: [] }));

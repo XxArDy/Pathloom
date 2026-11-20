@@ -15,6 +15,8 @@ export interface ProjectSnapshot {
 export interface UsageTotals { tokens_in: number; tokens_out: number; cost_usd?: number }
 export interface UsageSummary { total: UsageTotals; by_agent: Record<string, UsageTotals>; by_stage: Record<string, UsageTotals> }
 
+export interface InboxItem { task_id: string; stage: string; title: string; kind: 'approval' | 'decision' | 'owner' }
+
 export interface StageMeta {
   check?: string;
   title?: string;
@@ -72,6 +74,11 @@ export const api = {
   assetSave: (name: string, bytes: number[]) => invoke<string>('asset_save', { name, bytes }),
   stageRename: (key: string, title: string) => invoke<StageView[]>('stage_rename', { key, title }),
   stageLink: (from: string, to: string) => invoke<StageView[]>('stage_link', { from, to }),
+  approvalsDecide: (taskId: string, approve: boolean, reasons: string[], comment?: string) =>
+    invoke<StageView[]>('approvals_decide', { taskId, approve, reasons, comment: comment || null }),
+  decisionAnswer: (taskId: string, choice: string) => invoke<StageView[]>('decision_answer', { taskId, choice }),
+  inboxList: () => invoke<InboxItem[]>('inbox_list'),
+  evidenceRecheck: (taskId: string) => invoke<number>('evidence_recheck', { taskId }),
   stageUnlink: (from: string, to: string) => invoke<StageView[]>('stage_unlink', { from, to }),
 };
 
@@ -80,6 +87,13 @@ export function assetUrl(path: string): string {
   const base = navigator.userAgent.includes('Windows') ? 'http://plasset.localhost/' : 'plasset://localhost/';
   return base + path.split('/').map(encodeURIComponent).join('/');
 }
+
+/** URL of an image attached to a task (project-relative path), served by `plasset` inside the project only. */
+export function fileUrl(path: string): string {
+  return assetUrl('files/' + path);
+}
+
+export const isImageFile = (f: string) => !/^https?:\/\//i.test(f) && /\.(png|jpe?g|gif|webp)$/i.test(f);
 
 export function errorText(e: unknown): string {
   return typeof e === 'string' ? e : e instanceof Error ? e.message : String(e);

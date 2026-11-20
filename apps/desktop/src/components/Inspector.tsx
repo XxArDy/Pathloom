@@ -14,6 +14,7 @@ import { StatusIcon, focusStage } from './Sidebar';
 import { agentText, ago, claimOf, knownWhos, whoColor, whoText, type LogEntry } from '../agents';
 import type { Evidence } from '@pathloom/canvas';
 import { findTheme } from '../theme';
+import { ApprovalBox, DecisionBox, taskKind } from './ApprovalCard';
 
 /** External session links open only after the user confirms (the URL may start another app). */
 async function openSession(url: string): Promise<void> {
@@ -98,6 +99,7 @@ function TaskRow({ task, sub, stage }: { task: Task; sub?: boolean; stage: Stage
           {task.title}
           {(stage.taskInfo?.[task.id]?.files?.length ?? 0) > 0 && <IconPaperclip size={11} className="muted tt-clip" />}
         </button>
+        {stage.taskInfo?.[task.id]?.approval?.state === 'pending' && !done && <span className="review-badge">{t('approval.review')}</span>}
         {done && ev && (
           <span className="verified" title={evidenceText(ev, t, (x) => agentText(x, agents))} aria-label={t('evidence.verified')}><IconShieldCheck size={13} /></span>
         )}
@@ -441,6 +443,9 @@ function TaskDetail({ stage, taskId }: { stage: StageView; taskId: string }) {
         </p>
       )}
       {done && ev && <div className="gate ok"><IconShieldCheck size={14} /><span className="grow">{evidenceText(ev, t, (x) => agentText(x, agents))}</span></div>}
+
+      {(taskKind(stage, task.id) === 'decision' || info.decision) && <DecisionBox stage={stage} taskId={task.id} />}
+      {(taskKind(stage, task.id) === 'approval' || info.approval) && <ApprovalBox stage={stage} taskId={task.id} />}
 
       {!parent && (
         <>

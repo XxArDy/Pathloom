@@ -340,3 +340,39 @@ pre.code { font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6; b
 .diff .dl.del { background: rgba(220,80,80,.18); }
 .prop-comment { width: 100%; margin-top: 6px; padding: 8px; border-radius: 8px; border: 1px solid var(--bd2); background: var(--card); color: var(--tx); font: inherit; resize: vertical; }
 .prop-actions { display: flex; gap: 8px; margin-top: 12px; }
+
+/* Approvals, decisions, inbox (m9) */
+.appr { margin: 10px 0; display: flex; flex-direction: column; gap: 8px; }
+.appr-state { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--bd2); background: var(--card); font-size: 13px; }
+.appr-state.s-pending { border-color: var(--warn); }
+.appr-state.s-approved { border-color: var(--ok); }
+.appr-state.s-rejected { border-color: var(--bad); }
+.appr-comment { margin: 6px 0 0; white-space: pre-wrap; }
+.appr-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.chip { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--bd2); background: var(--card); color: var(--tx); font-size: 12px; cursor: pointer; }
+.chip.on { background: color-mix(in srgb, var(--ac) 20%, transparent); border-color: var(--ac); color: var(--ac); }
+.appr-thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
+.appr-thumbs img { height: 88px; max-width: 100%; border-radius: 8px; border: 1px solid var(--bd2); cursor: zoom-in; object-fit: cover; }
+.btn.danger-solid { background: var(--bad); color: #fff; border-color: var(--bad); }
+.appr-recheck { display: flex; align-items: center; gap: 10px; font-size: 12.5px; }
+.appr-recheck .ok { color: var(--ok); }
+.review-badge { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); white-space: nowrap; }
+.lightbox { position: fixed; inset: 0; z-index: 100; background: rgba(0, 0, 0, 0.82); display: grid; place-items: center; cursor: zoom-out; }
+.lightbox img { max-width: 94vw; max-height: 94vh; border-radius: 6px; }
+.ba-stage { position: relative; line-height: 0; border-radius: 8px; overflow: hidden; border: 1px solid var(--bd2); }
+.ba-stage img { width: 100%; display: block; cursor: zoom-in; }
+.ba-stage .ba-top { position: absolute; inset: 0; height: 100%; object-fit: fill; }
+.ba-line { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--ac); pointer-events: none; }
+.ba input[type=range] { width: 100%; margin: 6px 0 0; }
+.ba-cap { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--mu); }
+.dec-q { font-weight: 600; margin: 0; }
+.dec-opts { display: flex; flex-direction: column; gap: 6px; }
+.dec-opt { text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--bd2); background: var(--card); color: var(--tx); cursor: pointer; }
+.dec-opt:hover { border-color: var(--ac); }
+.dec-opt.rec { border-color: var(--ac); background: color-mix(in srgb, var(--ac) 12%, var(--card)); }
+.dec-opt.chosen { outline: 2px solid var(--ok); }
+.rec-tag { margin-left: 8px; font-size: 11px; color: var(--ac); }
+.inbox-body { padding: 8px 18px 18px; overflow-y: auto; }
+.inbox-list { list-style: none; margin: 0; padding: 0; }
+.inbox-list button { width: 100%; text-align: left; padding: 7px 8px; border-radius: 8px; background: none; border: 0; color: var(--tx); cursor: pointer; }
+.inbox-list button:hover { background: var(--card); }

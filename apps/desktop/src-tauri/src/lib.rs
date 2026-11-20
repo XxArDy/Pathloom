@@ -372,13 +372,9 @@ fn usage_summary(state: State<'_, AppState>) -> CmdResult<pathloom_core::UsageSu
     with_project(&state, |p| p.usage_summary())
 }
 
-/// Run a gate's `check` in the project folder (after the user confirmed it in the UI) and record the result.
-#[tauri::command]
-async fn gate_run(state: State<'_, AppState>, key: String) -> CmdResult<Vec<StageView>> {
-    let p = with_project(&state, |p| Ok(p.clone()))?;
-    let check = p.load_stage(&key).map_err(|e| e.to_string())?.check.ok_or("this gate has no check command")?;
-    let (root, cmd) = (p.root.clone(), check.clone());
-    let (code, ms) = tauri::async_runtime::spawn_blocking(move || {
+/// Run a shell command in `root` off the UI thread; returns (exit code or error, duration in ms).
+async fn run_shell(root: std::path::PathBuf, cmd: String) -> CmdResult<(std::io::Result<i32>, u64)> {
+    tauri::async_runtime::spawn_blocking(move || {
         let mut c = if cfg!(windows) {
             let mut c = std::process::Command::new("cmd");
             c.args(["/C", &cmd]);
@@ -398,7 +394,16 @@ async fn gate_run(state: State<'_, AppState>, key: String) -> CmdResult<Vec<Stag
         (out.map(|o| o.status.code().unwrap_or(-1)), u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX))
     })
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| e.to_string())
+}
+
+/// Run a gate's `check` in the project folder (after the user confirmed it in the UI) and record the result.
+#[tauri::command]
+async fn gate_run(state: State<'_, AppState>, key: String) -> CmdResult<Vec<StageView>> {
+    let p = with_project(&state, |p| Ok(p.clone()))?;
+    let check = p.load_stage(&key).map_err(|e| e.to_string())?.check.ok_or("this gate has no check command")?;
+    let (root, cmd) = (p.root.clone(), check.clone());
+    let (code, ms) = run_shell(root, cmd).await?;
     let code = code.map_err(|e| format!("cannot run `{check}`: {e}"))?;
     let ev = pathloom_core::Evidence {
         command: check.clone(),
@@ -469,13 +474,26 @@ fn serve_asset(app: &AppHandle, uri_path: &str) -> tauri::http::Response<Vec<u8>
     let state = app.state::<AppState>();
     let Ok(guard) = state.project.lock() else { return not_found() };
     let Some(project) = guard.as_ref() else { return not_found() };
-    let assets = project.plan_dir().join("assets");
     let rel: String = uri_path.trim_start_matches('/').split('/').map(percent_decode).collect::<Vec<_>>().join("/");
-    let Some(rel) = rel.strip_prefix("assets/") else { return not_found() };
-    let (Ok(base), Ok(full)) = (assets.canonicalize(), assets.join(rel).canonicalize()) else { return not_found() };
-    if !full.starts_with(&base) {
-        return not_found();
-    }
+    let full = if let Some(rel) = rel.strip_prefix("files/") {
+        // Task attachments (images only): project-relative, checked to stay inside the project.
+        let is_image = matches!(
+            Path::new(rel).extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).as_deref(),
+            Some("png" | "jpg" | "jpeg" | "gif" | "webp")
+        );
+        match project.artifact_path(rel) {
+            Ok(f) if is_image => f,
+            _ => return not_found(),
+        }
+    } else {
+        let assets = project.plan_dir().join("assets");
+        let Some(rel) = rel.strip_prefix("assets/") else { return not_found() };
+        let (Ok(base), Ok(full)) = (assets.canonicalize(), assets.join(rel).canonicalize()) else { return not_found() };
+        if !full.starts_with(&base) {
+            return not_found();
+        }
+        full
+    };
     let Ok(body) = std::fs::read(&full) else { return not_found() };
     let mime = match full.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).as_deref() {
         Some("png") => "image/png",
@@ -488,7 +506,7 @@ fn serve_asset(app: &AppHandle, uri_path: &str) -> tauri::http::Response<Vec<u8>
     };
     tauri::http::Response::builder()
         .header("Content-Type", mime)
-        .header("Cache-Control", "max-age=31536000, immutable")
+        .header("Cache-Control", if uri_path.trim_start_matches('/').starts_with("files/") { "no-cache" } else { "max-age=31536000, immutable" })
         .body(body)
         .unwrap_or_default()
 }
@@ -606,6 +624,44 @@ fn proposal_decide(state: State<'_, AppState>, id: String, approve: bool, commen
     })
 }
 
+/// The owner approves or rejects a task in review (reasons are stored ids, e.g. `off-theme`).
+#[tauri::command]
+fn approvals_decide(state: State<'_, AppState>, task_id: String, approve: bool, reasons: Vec<String>, comment: Option<String>) -> CmdResult<Vec<StageView>> {
+    with_project(&state, |p| {
+        p.decide_approval(&task_id, approve, &reasons, comment.as_deref(), "me")?;
+        let key = task_id.split('-').next().unwrap_or_default().to_string();
+        let what = if approve { "approved" } else { "rejected" };
+        log_app(p, "decide_approval", &format!("{what} {task_id}"), vec![key], vec![]);
+        views(p)
+    })
+}
+
+/// The owner answers a decision with an option label or free text.
+#[tauri::command]
+fn decision_answer(state: State<'_, AppState>, task_id: String, choice: String) -> CmdResult<Vec<StageView>> {
+    with_project(&state, |p| {
+        p.answer_decision(&task_id, &choice, "me")?;
+        let key = task_id.split('-').next().unwrap_or_default().to_string();
+        log_app(p, "answer_decision", &format!("answered {task_id}"), vec![key], vec![]);
+        views(p)
+    })
+}
+
+#[tauri::command]
+fn inbox_list(state: State<'_, AppState>) -> CmdResult<Vec<pathloom_core::InboxItem>> {
+    with_project(&state, |p| p.inbox())
+}
+
+/// Re-run the command of a task's evidence (after the user confirmed it); returns the exit code, writes nothing.
+#[tauri::command]
+async fn evidence_recheck(state: State<'_, AppState>, task_id: String) -> CmdResult<i32> {
+    let p = with_project(&state, |p| Ok(p.clone()))?;
+    let key = task_id.split('-').next().unwrap_or_default().to_string();
+    let cmd = p.load_stage(&key).map_err(|e| e.to_string())?.evidence.get(&task_id).map(|e| e.command.clone()).ok_or("this task has no evidence command")?;
+    let (code, _) = run_shell(p.root.clone(), cmd.clone()).await?;
+    code.map_err(|e| format!("cannot run `{cmd}`: {e}"))
+}
+
 #[tauri::command]
 fn stage_link(state: State<'_, AppState>, from: String, to: String) -> CmdResult<Vec<StageView>> {
     with_project(&state, |p| {
@@ -675,6 +731,10 @@ pub fn run() {
             subtask_add,
             stage_link,
             stage_unlink,
+            approvals_decide,
+            decision_answer,
+            inbox_list,
+            evidence_recheck,
         ])
         .run(tauri::generate_context!());
     if let Err(err) = result {

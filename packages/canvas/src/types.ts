@@ -127,11 +127,19 @@ export interface StageView {
   /** Live task claims (agent working on a task); a claim on a task covers its subtasks. */
   claims?: { taskId: string; agent: string; expiresAt: string; heartbeatAt?: string; silent?: boolean; note?: string }[];
   /** Per task id: a note and attached files (project-relative paths or links). */
-  taskInfo?: Record<string, { note?: string; files?: string[] }>;
+  taskInfo?: Record<string, TaskInfo>;
   /** Proof per done task id: the check that was run (exit code 0). */
   evidence?: Record<string, Evidence>;
   /** External sessions (other apps) that worked on this stage, oldest first. */
   sessions?: { client: string; id: string; url?: string | null; title?: string | null }[];
+}
+
+export interface TaskInfo {
+  note?: string;
+  files?: string[];
+  kind?: 'approval' | 'decision';
+  approval?: { state: 'pending' | 'approved' | 'rejected'; reasons?: string[]; comment?: string; at?: string; by?: string; requested_by?: string; requested_at?: string };
+  decision?: { question: string; options: { label: string; description?: string }[]; recommended?: number; choice?: string; at?: string; by?: string; asked_by?: string };
 }
 
 /** Check attached to a done task (`set_task` evidence). */

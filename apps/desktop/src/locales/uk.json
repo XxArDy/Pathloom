@@ -363,5 +363,48 @@
     "language": "Мова…",
     "themePlaceholder": "Вибери тему (стрілки показують її одразу)",
     "languagePlaceholder": "Вибери мову інтерфейсу"
+  },
+  "inbox": {
+    "button": "Чекає на мене ({{count}})",
+    "title": "Чекає на мене",
+    "kinds": {
+      "approval": "Погодити",
+      "decision": "Вирішити",
+      "owner": "Мої задачі"
+    }
+  },
+  "approval": {
+    "review": "на перевірці",
+    "preview": "Перегляд",
+    "before": "До",
+    "after": "Після",
+    "slider": "До / після",
+    "approve": "Погодити",
+    "reject": "Відхилити",
+    "confirmReject": "Підтвердити відхилення",
+    "comment": "Коментар (необов'язково)",
+    "requestedBy": "запитав {{who}} {{ago}}",
+    "recheck": "Перевірити ще раз",
+    "recheckConfirm": "Запустити цю команду в папці проєкту? Нічого не зберігається.\n{{cmd}}",
+    "exit": "код виходу {{code}}",
+    "state": {
+      "pending": "На перевірці",
+      "approved": "Погоджено",
+      "rejected": "Відхилено"
+    },
+    "reasons": {
+      "off-theme": "Не в темі",
+      "duplicate": "Дублікат",
+      "quality": "Якість",
+      "scale": "Масштаб",
+      "wrong-place": "Не те місце"
+    }
+  },
+  "decision": {
+    "answered": "Відповідь",
+    "recommended": "рекомендовано",
+    "own": "Свій варіант…",
+    "submit": "Відповісти",
+    "askedBy": "Питає {{who}}"
   }
 }
