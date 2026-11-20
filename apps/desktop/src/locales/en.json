@@ -357,5 +357,48 @@
     "language": "Language…",
     "themePlaceholder": "Choose a theme (arrows preview it)",
     "languagePlaceholder": "Choose the interface language"
+  },
+  "inbox": {
+    "button": "Waiting for me ({{count}})",
+    "title": "Waiting for me",
+    "kinds": {
+      "approval": "To approve",
+      "decision": "To decide",
+      "owner": "My tasks"
+    }
+  },
+  "approval": {
+    "review": "on review",
+    "preview": "Preview",
+    "before": "Before",
+    "after": "After",
+    "slider": "Before / after",
+    "approve": "Approve",
+    "reject": "Reject",
+    "confirmReject": "Confirm rejection",
+    "comment": "Comment (optional)",
+    "requestedBy": "requested by {{who}} {{ago}}",
+    "recheck": "Re-check",
+    "recheckConfirm": "Run this command in the project folder? Nothing is saved.\n{{cmd}}",
+    "exit": "exit code {{code}}",
+    "state": {
+      "pending": "On review",
+      "approved": "Approved",
+      "rejected": "Rejected"
+    },
+    "reasons": {
+      "off-theme": "Off-theme",
+      "duplicate": "Duplicate",
+      "quality": "Quality",
+      "scale": "Scale",
+      "wrong-place": "Wrong place"
+    }
+  },
+  "decision": {
+    "answered": "Answer",
+    "recommended": "recommended",
+    "own": "Own answer…",
+    "submit": "Answer",
+    "askedBy": "Asked by {{who}}"
   }
 }

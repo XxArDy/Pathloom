@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { IconX, IconMap, IconPlayerPlay, IconLock, IconLayoutBoard, IconListDetails, IconFocus2, IconChartDonut, IconSparkles } from '@tabler/icons-react';
+import { IconX, IconMap, IconPlayerPlay, IconLock, IconLayoutBoard, IconListDetails, IconFocus2, IconChartDonut, IconSparkles, IconInbox } from '@tabler/icons-react';
 import { useApp } from '../store';
 import { Sidebar } from './Sidebar';
 import { CanvasView } from './CanvasView';
@@ -8,6 +8,7 @@ import { Inspector } from './Inspector';
 import { ListView } from './ListView';
 import { SettingsDialog } from './SettingsDialog';
 import { ProposalsDialog } from './ProposalsDialog';
+import { InboxDialog } from './InboxDialog';
 import { AgentBanner } from './AgentBanner';
 import { OverviewView } from './OverviewView';
 import { CommandPalette } from './CommandPalette';
@@ -63,7 +64,7 @@ function StatusBar() {
 
 export function Workspace() {
   const { t } = useTranslation();
-  const { project, activeBoard, selectedStage, error, view, proposals, set } = useApp();
+  const { project, activeBoard, selectedStage, error, view, proposals, inbox, set } = useApp();
 
   const handlers = useMemo(() => ({
     'app.focus': () => { const s = useApp.getState(); s.set({ exec: !s.exec, view: 'board' }); },
@@ -98,6 +99,9 @@ export function Workspace() {
           {proposals.length > 0 && (
             <button className="btn sm pri" onClick={() => set({ proposalsOpen: true })}><IconSparkles size={14} />{t('proposals.button', { count: proposals.length })}</button>
           )}
+          {inbox.length > 0 && (
+            <button className="btn sm pri" onClick={() => set({ inboxOpen: true })}><IconInbox size={14} />{t('inbox.button', { count: inbox.length })}</button>
+          )}
         </div>
         <div className="area">
           {activeBoard ? <CanvasView key={activeBoard} /> : null}
@@ -113,6 +117,7 @@ export function Workspace() {
       {selectedStage && <Inspector stageKey={selectedStage} />}
       <SettingsDialog />
       <ProposalsDialog />
+      <InboxDialog />
       <CommandPalette />
     </div>
   );
